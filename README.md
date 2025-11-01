@@ -1,3 +1,4 @@
+```
 @
     /content/
           inscription content
@@ -31,3 +32,4 @@ Ctrl + C / copy -> opens control panel
 ⟳                          -> revert 
 
 See you on the other side
+```
