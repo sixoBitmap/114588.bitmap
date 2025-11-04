@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>⚔️ On-chain Inscription Tester + Virtual File System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  body { margin: 0; background: #000; color: #ff9900; font-family: Arial, sans-serif; height: 100vh; display: flex; overflow: hidden; }
+  #wrapper { display: flex; flex-direction: column; padding: 10px; width: calc(75% - 3px); min-width: 250px; }
+  #editor, #previewFrame { flex: 1; border-radius: 4px; box-shadow: 0 0 20px 2px #ff9900; border: 2px ridge #ff9900; background: #250326; color: #fff; outline: none; padding: 8px; width: 100%; height: 100%; }
+  #previewFrame { display: none; background: #111; }
+  #fileListContainer { flex: 1; overflow-y: auto; border: 1px solid #ff9900; border-radius: 4px; padding: 6px; background: #1a001a; }
+  .file-item.selected { background: #ff9900; color: #000; border-radius: 4px; }
+  .view-toggle button.active { filter: brightness(1.2); box-shadow: 0 0 8px 1px #ff9900; }
+  #right-panel { display: flex; flex-direction: column; width: 25%; min-width: 150px; border-left: 2px solid #ff9900; padding: 10px; background: #000; }
+  #resizer { width: 6px; cursor: ew-resize; background: #ff9900; opacity: 0.5; transition: opacity 0.15s; }
+  #resizer:hover { opacity: 1; }
+
+  /* Small spinner beside Virtual Folder */
+  #folderLoading {
+    display: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ff9900;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    margin-left: 6px;
+    animation: spin 1s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left: Ordinals Loader and Editor -->
+<div id="wrapper">
+  <h3>⚔️ On-chain Inscription Tester</h3>
+  <div style="display:flex; gap:8px; margin-bottom:8px;">
+    <button id="prevBtn" style="background:#ff6600; border:none; border-radius:4px; padding:6px 10px;">◀ Prev</button>
+    <input id="bitmapInput" placeholder="BITMAP (e.g. 100.bitmap)" style="flex:1; padding:6px; border:1px solid #ff9900; background:#250326; color:#fff; border-radius:4px;">
+    <button id="nextBtn" style="background:#ff6600; border:none; border-radius:4px; padding:6px 10px;">Next ▶</button>
+    <button id="loadBtn" style="background:#00ccff; border:none; border-radius:4px; padding:6px 10px;">⚙ Load Ordinals</button>
+  </div>
+
+  <div style="display:flex; gap:8px; margin-bottom:8px;" class="view-toggle">
+    <input id="filename" placeholder="file name (e.g. test.html)" style="flex:1; padding:6px; border:1px solid #ff9900; background:#250326; color:#fff; border-radius:4px;">
+    <button id="saveBtn" style="background:#ff9900; border:none; border-radius:4px; padding:6px 10px;">💾 Save</button>
+    <button id="importBtn" style="background:#0099ff; border:none; border-radius:4px; padding:6px 10px;">📂 Import</button>
+    <button id="exportBtn" style="background:#9966ff; border:none; border-radius:4px; padding:6px 10px;">📦 Download</button>
+    <button id="codeBtn" class="active" style="background:#333; color:#ff9900; border:none; border-radius:4px; padding:6px 10px;">📝 Code</button>
+    <button id="previewBtn" style="background:#00cc66; border:none; border-radius:4px; padding:6px 10px;">▶ Preview</button>
+  </div>
+
+  <textarea id="editor" placeholder="Paste or write your HTML/JS/CSS or view Ordinals content here..."></textarea>
+  <iframe id="previewFrame"></iframe>
+</div>
+
+<!-- Resizer -->
+<div id="resizer"></div>
+
+<!-- Right: Virtual Folder -->
+<div id="right-panel">
+  <h4>📁 Virtual Folder <span id="folderLoading"></span></h4>
+  <div id="fileListContainer"></div>
+  <button id="deleteBtn" style="background:#ff3300; border:none; border-radius:4px; padding:6px; margin-top:10px;">🗑 Delete Selected</button>
+</div>
+
+<script>
+/* ======== ORDINALS LOADER ======== */
+async function loadOrdinals() {
+  const spinner = document.getElementById('folderLoading');
+  spinner.style.display = 'inline-block'; // 🌀 show spinner
+
+  try {
+    const BITMAP = bitmapInput.value.trim() + ".bitmap";
+    const bitmapNumber = BITMAP.replace(".bitmap", "");
+    
+    let INSCRIPTION_ID = await getBitmapInscriptionId(bitmapNumber);          
+    if (!BITMAP || !INSCRIPTION_ID) return alert("Enter BITMAP and INSCRIPTION_ID");
+
+    console.clear();
+    console.log("🧹 Clearing localStorage for fresh session...");
+    localStorage.clear();
+    loadFileList();
+
+    console.log("═══════════════════════════════════════════════════════════════");
+    console.log("🚀 STARTING ORDINALS LOADER");
+    console.log(`🪩 BITMAP: ${BITMAP}`);
+    console.log(`🧩 INSCRIPTION_ID: ${INSCRIPTION_ID}`);
+    console.log("═══════════════════════════════════════════════════════════════");
+
+    const parcel = "." + BITMAP;
+    const txInfoUrl = `https://ordinals.com/r/blockinfo/${bitmapNumber}`;
+
+    console.log(`📡 FETCH → ${txInfoUrl}`);
+    const blockInfo = await fetch(txInfoUrl).then(r => r.json()).catch(err => { console.error("❌ Failed blockinfo:", err); return null; });
+    console.log("📦 BLOCKINFO RESPONSE:", blockInfo);
+    const transaction_count = blockInfo?.transaction_count || 0;
+    console.log(`🧮 TRANSACTION COUNT: ${transaction_count}`);
+
+    const ordinals = new Set();
+    let page = 0, more = true, total = 0;
+
+    while (more) {
+      const pageUrl = `https://ordinals.com/r/children/${INSCRIPTION_ID}/inscriptions/${page}`;
+      console.log(`\n📜 FETCHING PAGE ${page}: ${pageUrl}`);
+      const res = await fetch(pageUrl).then(r => r.json()).catch(err => { console.error("❌ Page fetch error:", err); return null; });
+      if (!res || !res.children) break;
+
+      console.log(`📄 PAGE ${page} RESPONSE:`, res);
+      console.log(`🔹 CHILDREN COUNT: ${res.children.length}`);
+
+      for (const child of res.children) {
+        const sat = child.sat;
+        if (!sat) continue;
+
+        const satUrl = `https://ordinals.com/r/sat/${sat}/at/-1`;
+        console.log(`📡 FETCH → ${satUrl}`);
+        const satData = await fetch(satUrl).then(r => r.json()).catch(() => null);
+        if (!satData || !satData.id) continue;
+
+        const id = satData.id;
+        const contentUrl = `https://ordinals.com/content/${id}`;
+        console.log(`📡 FETCH CONTENT → ${contentUrl}`);
+        const content = await fetch(contentUrl).then(r => r.text()).catch(() => '');
+
+        const number = isParcel(content, parcel, ordinals, transaction_count);
+        if (number !== null) {
+          console.log(`✅ VALID PARCEL FOUND #${number}`);
+          
+          // ✅ Use content as file name
+          let fileName = content.trim().split('\n')[0];
+          fileName = fileName.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
+          fileName = fileName.substring(0, 100) || id;
+
+          // Optionally add file extension
+          // if (fileName.endsWith('.html') === false && fileName.endsWith('.js') === false && fileName.endsWith('.css') === false) {
+          //   fileName += '.txt';
+          // }
+
+          localStorage.setItem(fileName, content);
+          console.log(`💾 Saved file → ${fileName}`);
+          total++;
+          loadFileList();
+        }
+      }
+
+      more = res.more;
+      page++;
+    }
+
+    console.log("═══════════════════════════════════════════════════════════════");
+    console.log(`🏁 COMPLETED | 💎 Found: ${ordinals.size} | 💾 Saved: ${total}`);
+    console.log("═══════════════════════════════════════════════════════════════");
+  } finally {
+    spinner.style.display = 'none'; // ✅ hide spinner when done
+  }
+}
+
+function isParcel(content, parcel, ordinals, txCount) {
+  content = content.trim();
+  if (!content.endsWith(parcel)) return null;
+  const base = content.replace(parcel, "").trim();
+  if (!/^\d+$/.test(base)) return null;
+  const num = parseInt(base);
+  if (!ordinals.has(num) && num <= txCount) {
+    ordinals.add(num);
+    return num;
+  }
+  return null;
+}
+
+/* ======== VIRTUAL FILE SYSTEM ======== */
+function saveFile() {
+  const name = filename.value.trim();
+  if (!name) return alert('Enter a file name');
+  localStorage.setItem(name, editor.value);
+  console.log(`💾 Saved file → ${name}`);
+  loadFileList();
+}
+
+function loadFileList() {
+  const box = document.getElementById('fileListContainer');
+  box.innerHTML = '';
+  const keys = Object.keys(localStorage);
+  if (keys.length === 0) {
+    box.innerHTML = '<p style="color:#666;">(no files yet)</p>';
+    return;
+  }
+  keys.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  keys.forEach(k => {
+    const div = document.createElement('div');
+    div.textContent = k;
+    div.className = 'file-item';
+    div.style.cursor = 'pointer';
+    div.style.padding = '4px';
+    div.addEventListener('click', () => {
+      document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+      div.classList.add('selected');
+      const value = localStorage.getItem(k);
+      editor.value = value;
+      filename.value = k;
+      console.log(`📂 Loaded → ${k}`);
+    });
+    box.appendChild(div);
+  });
+}
+
+/* ======== IMPORT / EXPORT ======== */
+async function importFolder() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.webkitdirectory = true;
+  input.multiple = true;
+  input.onchange = async e => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    for (const file of files) {
+      const text = await file.text();
+      localStorage.setItem(file.name, text);
+      console.log(`📥 Imported: ${file.name}`);
+    }
+    loadFileList();
+    alert(`✅ Imported ${files.length} files`);
+  };
+  input.click();
+}
+
+async function exportFolder() {
+  const zip = new JSZip();
+  const keys = Object.keys(localStorage);
+  if (keys.length === 0) return alert('No files to export.');
+  for (const k of keys) zip.file(k, localStorage.getItem(k));
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = "inscription_folder.zip";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ======== PREVIEW ======== */
+function resolveLocalImports(html) {
+  html = html.replace(/<script\s+src=["']([^"']+)["']><\/script>/g, (_, f) => {
+    const c = localStorage.getItem(f);
+    return c ? "<script>\n" + c + "\n<\/script>" : `<script src="${f}"><\/script>`;
+  });
+  html = html.replace(/<link\s+[^>]*href=["']([^"']+)["'][^>]*>/g, (_, f) => {
+    const c = localStorage.getItem(f);
+    return c ? "<style>\n" + c + "\n</style>" : `<link href="${f}" rel="stylesheet">`;
+  });
+  return html;
+}
+
+function preview() {
+  const doc = previewFrame.contentDocument;
+  const resolved = resolveLocalImports(editor.value);
+  doc.open();
+  doc.write(resolved);
+  doc.close();
+}
+
+function showCodeView() {
+  editor.style.display = 'block';
+  previewFrame.style.display = 'none';
+  codeBtn.classList.add('active');
+  previewBtn.classList.remove('active');
+}
+
+function showPreviewView() {
+  preview();
+  editor.style.display = 'none';
+  previewFrame.style.display = 'block';
+  previewBtn.classList.add('active');
+  codeBtn.classList.remove('active');
+}
+
+/* ======== RESIZER ======== */
+const resizer = document.getElementById('resizer');
+const left = document.getElementById('wrapper');
+let isDragging = false, startX = 0, startWidth = 0;
+resizer.addEventListener('mousedown', e => {
+  isDragging = true;
+  startX = e.clientX;
+  startWidth = left.offsetWidth;
+  document.body.style.cursor = 'ew-resize';
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - startX;
+  left.style.width = Math.max(250, startWidth + dx) + 'px';
+});
+document.addEventListener('mouseup', () => {
+  isDragging = false;
+  document.body.style.cursor = 'default';
+});
+
+/* ======== BITMAP NAVIGATION ======== */
+function changeBitmap(delta) {
+  let input = document.getElementById('bitmapInput');
+  let val = input.value.trim();
+  let num = parseInt(val.replace(/\.bitmap$/i, ''));
+  if (isNaN(num)) return alert('Invalid bitmap number');
+  num += delta;
+  if (num < 0) num = 0;
+  input.value = num;
+  console.log(`🔄 Switching to BITMAP: ${num}.bitmap`);
+  loadOrdinals();
+}
+
+prevBtn.onclick = () => changeBitmap(-1);
+nextBtn.onclick = () => changeBitmap(1);
+
+saveBtn.onclick = saveFile;
+deleteBtn.onclick = () => {
+  const sel = document.querySelector('.file-item.selected');
+  if (!sel) return alert('Select a file first');
+  const name = sel.textContent;
+  if (confirm('Delete "' + name + '"?')) {
+    localStorage.removeItem(name);
+    loadFileList();
+    editor.value = '';
+  }
+};
+importBtn.onclick = importFolder;
+exportBtn.onclick = exportFolder;
+codeBtn.onclick = showCodeView;
+previewBtn.onclick = showPreviewView;
+loadBtn.onclick = loadOrdinals;
+loadFileList();
+</script>
+
+<script>
+(function (global) {
+  const BASE_URL = "https://ordinals.com";
+  const pages = Array(8).fill(null);
+  const allPages = [
+    `${BASE_URL}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`,
+    `${BASE_URL}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`,
+    `${BASE_URL}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`,
+    `${BASE_URL}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`,
+    `${BASE_URL}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`,
+    `${BASE_URL}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`,
+    `${BASE_URL}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`,
+    `${BASE_URL}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`,
+    `${BASE_URL}/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0`
+  ];
+
+  async function fillPage(page) {
+    console.log(`Fetching page ${page}`);
+    let data = await fetch(allPages[page]).then((r) => r.text());
+    if (page === 2 || page === 3) {
+      data = "[" + data + "]";
+      data = JSON.parse(data);
+      data = [data.slice(0, 99999), data.slice(100000, 199999)];
+    } else {
+      try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (e) {}
+      try { data = JSON.parse(data.replaceAll("  ", "")); } catch (e) {}
+    }
+    const fullSats = [];
+    data[0].forEach((sat, i) => {
+      fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+    });
+    let filledArray = Array(100000).fill(0);
+    data[1].forEach((index, i) => { filledArray[index] = fullSats[i]; });
+    pages[page] = filledArray;
+  }
+
+  async function getBitmapSat(bitmapNumber) {
+    const page = Math.floor(bitmapNumber / 100000);
+    if (!pages[page]) await fillPage(page);
+    return pages[page][bitmapNumber % 100000];
+  }
+
+  async function getBitmapInscriptionId(bitmapNumber) {
+    const sat = await getBitmapSat(bitmapNumber);
+    const id = await fetch(`${BASE_URL}/r/sat/${sat}/at/0`).then((r) => r.json());
+    return id.id;
+  }
+
+  global.getBitmapInscriptionId = getBitmapInscriptionId;
+})(window);
+</script>
+
+</body>
+</html>
