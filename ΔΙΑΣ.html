@@ -8,6 +8,12 @@
   body { margin: 0; background: #000; color: #ff9900; font-family: Arial, sans-serif; height: 100vh; display: flex; overflow: hidden; }
   #wrapper { display: flex; flex-direction: column; padding: 10px; width: calc(75% - 3px); min-width: 250px; }
   #editor, #previewFrame { flex: 1;  box-shadow: 0 0 20px 2px #ff9900; border: 2px ridge #ff9900; background: #250326; color: #fff; outline: none; padding: 8px; width: 100%; height: 100%; }
+  /* Sparkles around main */
+
+@keyframes sparkle {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(10px, 10px); }
+}
   #previewFrame { display: none; background: #111; }
   #fileListContainer { flex: 1; overflow-y: auto; border: 1px solid #ff9900; padding: 6px; background: #1a001a; }
   .file-item.selected { background: #ff9900; color: #000;  }
@@ -63,6 +69,8 @@ button.airborne {
 
 
 button.jump { animation: jump 0.6s cubic-bezier(0.25, 0.1, 0.3, 5.8); /* ease-in fall */ }
+
+
 </style>
 </head>
 <body>
@@ -75,7 +83,7 @@ button.jump { animation: jump 0.6s cubic-bezier(0.25, 0.1, 0.3, 5.8); /* ease-in
   </div>
 
   <div style="display:flex; gap:8px; margin-bottom:8px;" class="view-toggle">
-    <button id="importBtn" style="background:#ff9900; border:none; border-radius:4px; padding:6px 10px;">✚</button>
+    <button id="importBtn" style="background:#ff9900; border:none; border-radius:4px; padding:6px 10px;">🧱</button>
     <button id="prevBtn" style="background:#ff6600; border:none; border-radius:4px; padding:6px 10px;">◀</button>
     <input id="bitmapInput" placeholder="BITMAP [114588]" style="flex:1; padding:6px; border:1px solid #ff9900; background:#250326; color:#fff; border-radius:4px;">
     <button id="nextBtn" style="background:#ff6600; border:none; border-radius:4px; padding:6px 10px;">▶</button>
@@ -86,7 +94,7 @@ button.jump { animation: jump 0.6s cubic-bezier(0.25, 0.1, 0.3, 5.8); /* ease-in
 
     <button id="saveBtn" style="background:#ff6600; border:none; border-radius:4px; padding:6px 10px;" >🌪️</button>
 
-    <button id="exportBtn" style="background:#ff9900; border:none; border-radius:4px; padding:6px 10px;">➖</button>
+    <button id="exportBtn" style="background:#ff9900; border:none; border-radius:4px; padding:6px 10px;"> 🟧</button>
 
     <button id="codeBtn" style="background:#333; color:#ff9900; border:none; border-radius:4px; padding:6px 10px;">🌱</button>
     <button id="previewBtn" style="background:#333; border:none; border-radius:4px; padding:6px 10px;">🌸</button>
@@ -418,6 +426,7 @@ function resolveLocalImports(html) {
 function preview() {
   const doc = previewFrame.contentDocument;
   const resolved = resolveLocalImports(editor.value);
+  editor.classList.add('sparkle');
   doc.open();
   doc.write(resolved);
   doc.close();
