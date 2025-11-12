@@ -33,16 +33,7 @@
   #resizer:hover { opacity: 1; }
 
   /* Small spinner beside Virtual Folder */
-  #folderLoading {
-    display: none;
-    width: 16px;
-    height: 16px;
-    border: 2px solid #ff9900;
-    border-top: 2px solid transparent;
-    margin-left: 6px;
-    animation: spin 1s linear infinite;
-    vertical-align: middle;
-  }
+
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -98,8 +89,9 @@ button.jump { animation: jump 0.6s cubic-bezier(0.25, 0.1, 0.3, 5.8); /* ease-in
   width: 42px;
   height: 42px;
   
-  /* https://ordinals.com/content/cca247c9f544b1b8e7679d74c427051f8117687fb223c118ad8095f562e29f0fi144 */
-  background-image: url('zeus.png');
+  /* https://ordinals.com/content/cca247c9f544b1b8e7679d74c427051f8117687fb223c118ad8095f562e29f0fi144 
+  4.114588.bitmap*/
+  background-image: url('https://ordinals.com/content/cca247c9f544b1b8e7679d74c427051f8117687fb223c118ad8095f562e29f0fi144 ');
   background-size: cover;
   background-position: center;
   border-radius: 50%;
@@ -511,24 +503,37 @@ async function exportFolder() {
   if (keys.length === 0) return alert('No parcels to discharge.');
 
   for (const k of keys) {
-    zip.file(k, localStorage.getItem(k));
+    let content = localStorage.getItem(k);
+
+    // 🖼 Detect base64-encoded image or PDF
+    if (content.startsWith("data:image") || content.startsWith("data:application/pdf")) {
+      // Split header and actual data
+      const base64Data = content.split(",")[1];
+      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      zip.file(k, binaryData, { binary: true });
+    } else {
+      // Regular text file
+      zip.file(k, content);
+    }
   }
 
+  // Generate ZIP blob
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
 
   // 🌸 Use the bitmapInput value as the file name
-  let name = document.getElementById("bitmapInput").value.trim() + ".bitmap" || ".bitmap";
-  name = name.replace(/[^a-zA-Z0-9._-]/g, "_"); // sanitize
+  let name = document.getElementById("bitmapInput").value.trim() || "bitmap";
+  name = name.replace(/[^a-zA-Z0-9._-]/g, "_");
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name}.zip`;
+  a.download = `${name}.bitmap.zip`;
   a.click();
   URL.revokeObjectURL(url);
 
-  console.log(`💾 Exported ZIP → ${name}.zip`);
+  console.log(`💾 Exported ZIP → ${name}.bitmap.zip`);
 }
+
 
 
 /* ======== PREVIEW ======== */
