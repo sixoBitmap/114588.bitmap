@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Fast Infinite Zoom Camera</title>
+<title>Infinite Zoom Inside Rectangle + Background Page Switch</title>
 
 <style>
   body {
@@ -12,13 +12,19 @@
     background: #000;
   }
 
-  #camera {
+  /* FULLSCREEN BACKGROUND PAGE */
+  #backgroundFrame {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100vw;
     height: 100vh;
-    position: relative;
-    transform-origin: 0 0;
+    border: none;
+    pointer-events: none;
+    z-index: 1;
   }
 
+  /* FIXED ORANGE RECTANGLE */
   .square {
     width: 250px;
     height: 250px;
@@ -27,28 +33,58 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    overflow: hidden;
+    z-index: 3;
+  }
+
+  /* INNER ZOOM LAYER INSIDE RECTANGLE */
+  #zoomLayer {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    transform-origin: center center;
+    background: #111; /* YOU CAN CHANGE THIS */
   }
 </style>
 </head>
 <body>
 
-<div id="camera">
-  <div class="square"></div>
+<!-- BACKGROUND PAGE -->
+<iframe id="backgroundFrame"></iframe>
+
+<!-- ORANGE RECTANGLE -->
+<div class="square">
+  <!-- ONLY THIS ZOOMS -->
+  <div id="zoomLayer"></div>
 </div>
 
 <script>
-  const camera = document.getElementById("camera");
+  const bg = document.getElementById("backgroundFrame");
+  const zoomLayer = document.getElementById("zoomLayer");
 
-  // Drag variables
+  /* DRAGGING VARIABLES (INSIDE RECTANGLE) */
   let isDragging = false;
   let startX = 0, startY = 0;
-  let camX = 0, camY = 0;
+  let layerX = 0, layerY = 0;
 
-  // Zoom variables
+  /* ZOOM VARIABLES */
   let scale = 1;
 
-  // --- DRAGGING ---
+  /* SCROLL PAGE SWITCHING */
+  let scrollDownAmount = 0;
+  let scrollUpAmount = 0;
+  const SCROLL_THRESHOLD = 4000;
+
+  let pageIndex = 0;
+
+  const pages = [
+    "https://sixobitmap.github.io/114588.bitmap/zeus.html",
+    "https://sixobitmap.github.io/114588.bitmap/%CE%97%CE%A1%CE%91.html"
+  ];
+
+  /* DRAG ONLY THE ZOOM LAYER */
   document.addEventListener("mousedown", e => {
+    if (e.target !== zoomLayer) return;
     isDragging = true;
     startX = e.clientX;
     startY = e.clientY;
@@ -56,40 +92,73 @@
 
   document.addEventListener("mousemove", e => {
     if (!isDragging) return;
-    let dx = (e.clientX - startX);
-    let dy = (e.clientY - startY);
-    camera.style.transform = `translate(${camX + dx}px, ${camY + dy}px) scale(${scale})`;
+
+    let dx = e.clientX - startX;
+    let dy = e.clientY - startY;
+
+    zoomLayer.style.transform =
+      `translate(${layerX + dx}px, ${layerY + dy}px) scale(${scale})`;
   });
 
   document.addEventListener("mouseup", e => {
     if (!isDragging) return;
     isDragging = false;
-    camX += e.clientX - startX;
-    camY += e.clientY - startY;
+
+    layerX += e.clientX - startX;
+    layerY += e.clientY - startY;
   });
 
-  // --- SUPER FAST INFINITE ZOOM ---
+  /* ZOOM ONLY THE ZOOM LAYER */
   document.addEventListener("wheel", e => {
     e.preventDefault();
 
-    // Increase this value for faster zoom
-    const zoomIntensity = 0.01;  // 🌟 MUCH FASTER (10x the previous 0.001)
-
+    const zoomIntensity = 0.01;
     const delta = e.deltaY;
 
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
-
-    const prevScale = scale;
-
+    /* infinite zoom inside rectangle */
+    let prevScale = scale;
     scale *= delta > 0 ? (1 - zoomIntensity) : (1 + zoomIntensity);
 
-    // Adjust camera to zoom toward mouse
-    camX = mouseX - (mouseX - camX) * (scale / prevScale);
-    camY = mouseY - (mouseY - camY) * (scale / prevScale);
+    zoomLayer.style.transform =
+      `translate(${layerX}px, ${layerY}px) scale(${scale})`;
 
-    camera.style.transform = `translate(${camX}px, ${camY}px) scale(${scale})`;
+    /* PAGE SWITCHING */
+    if (delta > 0) {
+      scrollDownAmount += Math.abs(delta);
+      scrollUpAmount = 0;
+
+      if (scrollDownAmount >= SCROLL_THRESHOLD) {
+        nextPage();
+        scrollDownAmount = 0;
+      }
+
+    } else {
+      scrollUpAmount += Math.abs(delta);
+      scrollDownAmount = 0;
+
+      if (scrollUpAmount >= SCROLL_THRESHOLD) {
+        prevPage();
+        scrollUpAmount = 0;
+      }
+    }
   }, { passive: false });
+
+  /* PAGE SWITCHING */
+  function nextPage() {
+    pageIndex = (pageIndex + 1) % pages.length;
+    showPage();
+  }
+
+  function prevPage() {
+    pageIndex = (pageIndex - 1 + pages.length) % pages.length;
+    showPage();
+  }
+
+  function showPage() {
+    bg.src = pages[pageIndex];
+  }
+
+  showPage();
 </script>
 
 </body>
