@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Bitmap Replacer",
+  "version": "1.0",
+  "description": "Replaces the word 'bitmap' with 🟧 on all websites.",
+  "permissions": ["activeTab", "scripting"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
