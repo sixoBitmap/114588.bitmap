@@ -1,35 +1,11 @@
 ```
-@
-    /content/
-          inscription content
+Zeus: https://sixobitmap.github.io/114588.bitmap/zeus.html
 
-#
-    /inscription/
-         full inscription metadata
+Ήρα: https://sixobitmap.github.io/114588.bitmap/ΗΡΑ.html
 
-.
-   /children/
-         child inscriptions
+Internet: https://sixobitmap.github.io/114588.bitmap/internet.html
 
-?
-   /undelegated-content/
-           undelegated inscription data
+Parcels: https://sixobitmap.github.io/114588.bitmap/parcels.html
 
-%
-   /parents/
-         parent inscriptions
-
-%/#
-      /parents/.../inscriptions
-             inscriptions of all parent records
-
-*
-    /metadata/
-          metadata CBOR
-
-Ctrl + C / copy -> opens control panel
-⧉                          -> paste 
-⟳                          -> revert 
-
-See you on the other side
+Pixel Painter: https://sixobitmap.github.io/114588.bitmap/pixel_painter.html
 ```
