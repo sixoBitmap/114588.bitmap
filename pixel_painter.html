@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bitmap Map Painter (Custom Condition + Inscription)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #0b0e14;
+      --border: #20283a;
+      --muted: #9aa6b2;
+      --text: #e8ecf1;
+      --accent: #ff9a1f;
+      --danger: #ff5c5c;
+    }
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header { padding: 14px 18px 0 18px; }
+    h1 { margin: 0 0 10px 0; font-size: 1.25rem; font-weight: 650; }
+
+    #controls {
+      margin: 10px 18px 12px 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 12px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button {
+      background: #1c2333;
+      color: var(--text);
+      border: 1px solid #2a3347;
+      padding: 9px 11px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    button:hover { border-color: #3b4763; }
+    button:active { transform: translateY(1px); }
+
+    label {
+      font-size: 0.9rem;
+      opacity: 0.95;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="number"], select, input[type="text"] {
+      background: #0b0e14;
+      color: var(--text);
+      border: 1px solid #2a3347;
+      padding: 7px 9px;
+      border-radius: 8px;
+    }
+    input[type="number"], select { width: 150px; }
+    input[type="text"] { width: min(520px, 90vw); }
+    input[type="checkbox"] { transform: translateY(1px); }
+
+    input[disabled]{
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .muted {
+      color: var(--muted);
+      margin: 8px 0 0 0;
+      font-size: 0.9rem;
+    }
+
+    .error {
+      color: var(--danger);
+      font-size: 0.9rem;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .stat {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.92rem;
+      opacity: 0.95;
+    }
+
+    .progress {
+      height: 8px;
+      background: #0a0d13;
+      border: 1px solid #1f2636;
+      border-radius: 999px;
+      overflow: hidden;
+      width: min(420px, 100%);
+    }
+    .progress > div {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #ffb35c, var(--accent));
+      transition: width 120ms linear;
+    }
+
+    /* ===== Scroll + Pan container ===== */
+    #stage {
+      flex: 1;
+      display: block;
+      padding: 0;
+      min-height: 0;
+      overflow: auto;
+
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      position: relative;
+    }
+    #stage.panning { cursor: grabbing; }
+
+    #canvasWrap {
+      background: #07090d;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+
+      display: inline-block;
+      max-width: none;
+      max-height: none;
+
+      width: max-content;
+      height: max-content;
+
+      margin: 12px;
+    }
+
+    canvas {
+      background: #000;
+      border-radius: 6px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+
+    /* Hover tooltip */
+    #tooltip {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
+      background: #0b0e14;
+      color: var(--text);
+      border: 1px solid #2a3347;
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      display: none;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Bitmap Map 🟧⬛</h1>
+  </header>
+
+  <div id="controls">
+    <div class="row">
+      <label>
+        Start
+        <input id="startInput" type="number" min="0" step="1" value="0">
+      </label>
+
+      <label>
+        End (inclusive)
+        <input id="endInput" type="number" min="0" step="1" value="20000">
+      </label>
+
+      <label>
+        Bitmap size (side)
+        <input id="bitmapSide" type="number" min="1" step="1" value="0" disabled>
+      </label>
+
+      <label>
+        Mode
+        <select id="modeSelect">
+          <option value="parity">Custom Condition (fast)</option>
+          <option value="inscription">Inscription (slow)</option>
+        </select>
+      </label>
+
+      <label>
+        <input id="autoFit" type="checkbox" checked>
+        Auto-fit
+      </label>
+    </div>
+
+    <div class="row" style="margin-top: 10px;" id="condRow">
+      <label>
+        Condition (use <b>sat</b>)
+        <input
+          id="conditionInput"
+          type="text"
+          value="(sat % 2) === 0"
+          placeholder="Example: (sat % 7) === 0"
+        >
+      </label>
+    </div>
+
+    <div class="row" style="margin-top: 10px;">
+      <button id="btnRenderRange">Render Range</button>
+      <button id="btnStop">Stop</button>
+    </div>
+
+    <div class="row" style="margin-top: 10px;">
+      <div class="progress"><div id="bar"></div></div>
+      <div class="stat">Status: <span id="statStatus">-</span></div>
+      <div class="stat">Page: <span id="statPage">-</span></div>
+      <div class="stat">Painted: <span id="statPainted">0</span></div>
+      <div class="stat">Orange: <span id="statOrange">0</span></div>
+      <div class="stat">Range size: <span id="statSize">-</span></div>
+      <div class="stat">Grid: <span id="statGrid">-</span></div>
+      <div class="stat">Scale: <span id="statScale">-</span></div>
+    </div>
+
+    <div id="err" class="error"></div>
+
+    <p class="muted" id="modeHint">
+      Custom condition mode: if your condition is true -> black, else orange.
+      Default is <code>(sat % 2) === 0</code>.
+    </p>
+  </div>
+
+  <div id="stage">
+    <div id="canvasWrap">
+      <canvas id="c"></canvas>
+    </div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script>
+    /* ======== OCW library (patched + exported) ======== */
+    (function(global) {
+      const BASE_URL = "https://ordinals.com";
+      const pages = Array(9).fill(null);
+
+      const allPages = [
+        `${BASE_URL}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`,
+        `${BASE_URL}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`,
+        `${BASE_URL}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`,
+        `${BASE_URL}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`,
+        `${BASE_URL}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`,
+        `${BASE_URL}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`,
+        `${BASE_URL}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`,
+        `${BASE_URL}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`,
+        `${BASE_URL}/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0`
+      ];
+
+      async function fillPage(page) {
+        if (pages[page]) return;
+        if (!allPages[page]) throw new Error(`No data page for index ${page}.`);
+
+        let data = await fetch(allPages[page]).then((r) => r.text());
+
+        if (page === 2 || page === 3) {
+          data = "[" + data + "]";
+          data = JSON.parse(data);
+          data = [data.slice(0, 99999), data.slice(100000, 199999)];
+        } else {
+          try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (e) {}
+          try { data = JSON.parse(data.replaceAll("  ", "")); } catch (e) {}
+        }
+
+        const fullSats = [];
+        data[0].forEach((sat, i) => {
+          fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+        });
+
+        const filledArray = Array(100000).fill(0);
+        data[1].forEach((index, i) => {
+          filledArray[index] = fullSats[i];
+        });
+
+        pages[page] = filledArray;
+      }
+
+      async function getBitmapSat(bitmapNumber) {
+        const page = Math.floor(bitmapNumber / 100000);
+        if (!pages[page]) await fillPage(page);
+        return pages[page][bitmapNumber % 100000];
+      }
+
+      async function getBitmapInscriptionId(bitmapNumber, fetchOptions) {
+        const sat = await getBitmapSat(bitmapNumber);
+        const res = await fetch(`${BASE_URL}/r/sat/${sat}/at/-1`, fetchOptions);
+        const json = await res.json().catch(() => ({}));
+        return (json && json.id) ? json.id : null;
+      }
+
+      global.getBitmapSat = getBitmapSat;
+      global.getBitmapInscriptionId = getBitmapInscriptionId;
+      global.__ocw = { fillPage, pages, allPages };
+    })(window);
+
+    /* ======== UI + renderer ======== */
+    const stage = document.getElementById("stage");
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const tooltip = document.getElementById("tooltip");
+
+    const startInput = document.getElementById("startInput");
+    const endInput = document.getElementById("endInput");
+    const bitmapSideInput = document.getElementById("bitmapSide");
+    const autoFitInput = document.getElementById("autoFit");
+    const modeSelect = document.getElementById("modeSelect");
+    const modeHint = document.getElementById("modeHint");
+    const conditionInput = document.getElementById("conditionInput");
+    const condRow = document.getElementById("condRow");
+
+    const bar = document.getElementById("bar");
+    const statStatus = document.getElementById("statStatus");
+    const statPage = document.getElementById("statPage");
+    const statPainted = document.getElementById("statPainted");
+    const statOrange = document.getElementById("statOrange");
+    const statSize = document.getElementById("statSize");
+    const statGrid = document.getElementById("statGrid");
+    const statScale = document.getElementById("statScale");
+    const controlsEl = document.getElementById("controls");
+    const errEl = document.getElementById("err");
+
+    let stopFlag = false;
+    let currentAbort = null;
+
+    let lastRender = null; // { start, end, total, width, height }
+
+    const satCache = new Map();
+    const inscriptionCache = new Map();
+    let lastHoverNumber = null;
+    let lastHoverData = { number: null, sat: null, inscriptionId: null };
+    let hoverAbort = null;
+
+    let manualScale = 1;
+
+    /* ======== Pan state ======== */
+    let isPanning = false;
+    let panPointerId = null;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panScrollLeft = 0;
+    let panScrollTop = 0;
+    let panMoved = false;
+    let justPanned = false;
+
+    document.getElementById("btnStop").addEventListener("click", () => {
+      stopFlag = true;
+      if (currentAbort) currentAbort.abort();
+      statStatus.textContent = "stopping...";
+    });
+
+    document.getElementById("btnRenderRange").addEventListener("click", () => {
+      const start = Math.max(0, parseInt(startInput.value, 10) || 0);
+      const end = Math.max(0, parseInt(endInput.value, 10) || 0);
+      startRenderRange(start, end, modeSelect.value);
+    });
+
+    modeSelect.addEventListener("change", () => {
+      if (modeSelect.value === "parity") {
+        condRow.style.display = "flex";
+        modeHint.innerHTML =
+          `Custom condition mode: if your condition is true -> black, else orange. ` +
+          `Default is <code>(sat % 2) === 0</code>.`;
+      } else {
+        condRow.style.display = "none";
+        modeHint.innerHTML =
+          `Inscription mode: if <b>getBitmapInscriptionId</b> returns an id -> orange, else black.`;
+      }
+    });
+
+    autoFitInput.addEventListener("change", () => fitCanvasToScreen());
+    window.addEventListener("resize", () => fitCanvasToScreen());
+
+    condRow.style.display = "flex";
+
+    function showError(msg) {
+      errEl.style.display = "block";
+      errEl.textContent = msg;
+    }
+    function clearError() {
+      errEl.style.display = "none";
+      errEl.textContent = "";
+    }
+
+    /* ======== Zoom helpers ======== */
+    function applyScale() {
+      const s = manualScale;
+      canvas.style.width = (canvas.width * s) + "px";
+      canvas.style.height = (canvas.height * s) + "px";
+      statScale.textContent = s.toFixed(2) + "×";
+    }
+
+    function fitCanvasToScreen() {
+      if (autoFitInput.checked) {
+        const availableW = Math.max(50, window.innerWidth - 36);
+        const availableH = Math.max(50, window.innerHeight - controlsEl.offsetHeight - 50);
+
+        const w = canvas.width || 1;
+        const h = canvas.height || 1;
+
+        manualScale = Math.min(availableW / w, availableH / h);
+        if (!Number.isFinite(manualScale) || manualScale <= 0) manualScale = 1;
+      }
+      applyScale();
+    }
+
+    /* ======== Cursor-anchored zoom (robust, scroll-space based) ======== */
+    function onWheelZoom(e) {
+      e.preventDefault();
+
+      if (autoFitInput.checked) autoFitInput.checked = false;
+
+      const oldScale = manualScale;
+
+      // mouse position inside the stage viewport
+      const stageRect = stage.getBoundingClientRect();
+      const mouseX = e.clientX - stageRect.left;
+      const mouseY = e.clientY - stageRect.top;
+
+      // content point currently under the mouse (in scroll space)
+      const contentX = stage.scrollLeft + mouseX;
+      const contentY = stage.scrollTop + mouseY;
+
+      // zoom
+      const zoomFactor = Math.exp(-e.deltaY * 0.001);
+      manualScale *= zoomFactor;
+      manualScale = Math.max(0.02, Math.min(manualScale, 200));
+
+      applyScale();
+
+      // keep same content point under cursor
+      const ratio = manualScale / oldScale;
+      stage.scrollLeft = contentX * ratio - mouseX;
+      stage.scrollTop  = contentY * ratio - mouseY;
+    }
+
+    stage.addEventListener("wheel", onWheelZoom, { passive: false });
+
+    canvas.addEventListener("dblclick", () => {
+      autoFitInput.checked = true;
+      fitCanvasToScreen();
+    });
+
+    /* ======== Count orange pixels by actual RGBA ======== */
+    function countOrangePixels(buf) {
+      let count = 0;
+      for (let i = 0; i < buf.length; i += 4) {
+        if (
+          buf[i] === 255 &&
+          buf[i + 1] === 140 &&
+          buf[i + 2] === 0 &&
+          buf[i + 3] === 255
+        ) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    /* ======== SQUARE GRID SETUP ======== */
+    function setupGrid(total) {
+      const side = Math.max(1, Math.ceil(Math.sqrt(total)));
+
+      canvas.width = side;
+      canvas.height = side;
+
+      bitmapSideInput.value = side;
+
+      statGrid.textContent = `${side.toLocaleString()} × ${side.toLocaleString()}`;
+      statSize.textContent = total.toLocaleString();
+      statOrange.textContent = "0";
+
+      const img = ctx.createImageData(side, side);
+      const buf = img.data;
+
+      // base black
+      for (let i = 0; i < buf.length; i += 4) {
+        buf[i] = 0; buf[i+1] = 0; buf[i+2] = 0; buf[i+3] = 255;
+      }
+
+      fitCanvasToScreen();
+
+      // reset view to true top-left
+      stage.scrollLeft = 0;
+      stage.scrollTop = 0;
+
+      return { img, buf, w: side, h: side };
+    }
+
+    /* ======== Color logic (as in your file) ======== */
+    function setPixel(buf, localIdx, isOrange) {
+      const p = localIdx * 4;
+
+      // isOrange true -> BLACK
+      // isOrange false -> ORANGE
+      if (isOrange) {
+        buf[p] = 0; buf[p+1] = 0; buf[p+2] = 0; buf[p+3] = 255;
+      } else {
+        buf[p] = 255; buf[p+1] = 140; buf[p+2] = 0; buf[p+3] = 255;
+      }
+    }
+
+    function compileCondition(expr) {
+      try {
+        const fn = new Function("sat", `"use strict"; return !!(${expr});`);
+        fn(0);
+        return fn;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function startRenderRange(start, end, mode) {
+      clearError();
+      stopFlag = false;
+
+      if (currentAbort) currentAbort.abort();
+      currentAbort = new AbortController();
+
+      if (end < start) {
+        showError("End must be greater than or equal to Start.");
+        statStatus.textContent = "error";
+        return;
+      }
+
+      const total = end - start + 1;
+
+      const lastPagePossible = window.__ocw.allPages.length - 1;
+      const pageEnd = Math.floor(end / 100000);
+
+      if (pageEnd > lastPagePossible) {
+        showError(
+          `Range exceeds available data pages. Max supported index is ` +
+          `${(lastPagePossible + 1) * 100000 - 1}.`
+        );
+        statStatus.textContent = "error";
+        return;
+      }
+
+      let predicate = null;
+      if (mode === "parity") {
+        const expr = (conditionInput.value || "").trim();
+        if (!expr) {
+          showError("Condition cannot be empty.");
+          statStatus.textContent = "error";
+          return;
+        }
+        predicate = compileCondition(expr);
+        if (!predicate) {
+          showError("Invalid condition syntax. Example: (sat % 2) === 0");
+          statStatus.textContent = "error";
+          return;
+        }
+      }
+
+      const { img, buf, w, h } = setupGrid(total);
+      lastRender = { start, end, total, width: w, height: h };
+
+      statPage.textContent = "-";
+      statPainted.textContent = "0";
+      statOrange.textContent = "0";
+      bar.style.width = "0%";
+
+      try {
+        if (mode === "parity") {
+          statStatus.textContent = "rendering condition";
+          await renderConditionRange(start, end, img, buf, predicate);
+        } else {
+          statStatus.textContent = "rendering inscription";
+          await renderInscriptionRange(start, end, img, buf, currentAbort.signal);
+        }
+      } catch (e) {
+        if (!stopFlag) {
+          showError("Render failed. Check console for details.");
+          console.error(e);
+          statStatus.textContent = "error";
+        }
+      }
+
+      ctx.putImageData(img, 0, 0);
+
+      // update orange count from pixels
+      const orangeCount = countOrangePixels(buf);
+      statOrange.textContent = orangeCount.toLocaleString();
+
+      if (stopFlag) {
+        statStatus.textContent = "stopped";
+        statPage.textContent = "stopped";
+      } else if (statStatus.textContent !== "error") {
+        statStatus.textContent = "done";
+        bar.style.width = "100%";
+        statPage.textContent = "done";
+      }
+    }
+
+    /* ======== FAST MODE: custom condition ======== */
+    async function renderConditionRange(start, end, img, buf, predicate) {
+      const total = end - start + 1;
+      const chunkSize = 5000;
+
+      const pageStart = Math.floor(start / 100000);
+      const pageEnd = Math.floor(end / 100000);
+
+      let painted = 0;
+
+      for (let page = pageStart; page <= pageEnd; page++) {
+        if (stopFlag) break;
+
+        statPage.textContent = String(page);
+
+        await window.__ocw.fillPage(page);
+        const pageArr = window.__ocw.pages[page];
+
+        const absPageStart = page * 100000;
+        const absPageEnd = absPageStart + 100000 - 1;
+
+        const segStart = Math.max(start, absPageStart);
+        const segEnd = Math.min(end, absPageEnd);
+
+        for (let i = segStart; i <= segEnd; i += chunkSize) {
+          if (stopFlag) break;
+
+          const chunkEnd = Math.min(i + chunkSize - 1, segEnd);
+
+          for (let j = i; j <= chunkEnd; j++) {
+            const sat = pageArr[j - absPageStart];
+            const isBlack = !!predicate(sat);
+            const localIdx = j - start;
+
+            // your current color logic
+            setPixel(buf, localIdx, !isBlack);
+          }
+
+          painted = chunkEnd - start + 1;
+          statPainted.textContent = painted.toLocaleString();
+          bar.style.width = ((painted / total) * 100).toFixed(2) + "%";
+
+          ctx.putImageData(img, 0, 0);
+          await new Promise(requestAnimationFrame);
+        }
+      }
+    }
+
+    /* ======== SLOW MODE: inscription presence ======== */
+    async function renderInscriptionRange(start, end, img, buf, signal) {
+      const total = end - start + 1;
+
+      const pageStart = Math.floor(start / 100000);
+      const pageEnd = Math.floor(end / 100000);
+
+      for (let page = pageStart; page <= pageEnd; page++) {
+        if (stopFlag) break;
+        statPage.textContent = `prefetch ${page}`;
+        await window.__ocw.fillPage(page);
+      }
+
+      statPage.textContent = "network";
+
+      const CONCURRENCY = 16;
+
+      let next = start;
+      let completed = 0;
+
+      let dirty = false;
+      let lastFlush = performance.now();
+
+      async function worker() {
+        while (!stopFlag) {
+          const i = next++;
+          if (i > end) break;
+
+          const localIdx = i - start;
+
+          try {
+            const id = await window.getBitmapInscriptionId(i, { signal });
+            setPixel(buf, localIdx, !!id);
+          } catch (e) {
+            if (stopFlag) break;
+            setPixel(buf, localIdx, false);
+          }
+
+          completed++;
+          dirty = true;
+
+          if (completed % 250 === 0 || completed === total) {
+            statPainted.textContent = completed.toLocaleString();
+            bar.style.width = ((completed / total) * 100).toFixed(2) + "%";
+          }
+
+          const now = performance.now();
+          if (dirty && (now - lastFlush) > 60) {
+            ctx.putImageData(img, 0, 0);
+            dirty = false;
+            lastFlush = now;
+            await new Promise(requestAnimationFrame);
+          }
+        }
+      }
+
+      const workers = Array.from({ length: CONCURRENCY }, () => worker());
+      await Promise.all(workers);
+
+      ctx.putImageData(img, 0, 0);
+      statPainted.textContent = Math.min(completed, total).toLocaleString();
+      bar.style.width = ((Math.min(completed, total) / total) * 100).toFixed(2) + "%";
+    }
+
+    /* ======== Drag-to-pan ======== */
+    stage.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+
+      isPanning = true;
+      panPointerId = e.pointerId;
+      panMoved = false;
+      justPanned = false;
+
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panScrollLeft = stage.scrollLeft;
+      panScrollTop = stage.scrollTop;
+
+      stage.classList.add("panning");
+      try { stage.setPointerCapture(e.pointerId); } catch {}
+
+      e.preventDefault();
+    });
+
+    window.addEventListener("pointermove", (e) => {
+      if (!isPanning) return;
+      if (panPointerId !== null && e.pointerId !== panPointerId) return;
+
+      const dx = e.clientX - panStartX;
+      const dy = e.clientY - panStartY;
+
+      if (!panMoved && (Math.abs(dx) + Math.abs(dy)) > 2) {
+        panMoved = true;
+        hideTooltip();
+      }
+
+      stage.scrollLeft = panScrollLeft - dx;
+      stage.scrollTop  = panScrollTop - dy;
+
+      e.preventDefault();
+    }, { passive: false });
+
+    function endPan(e) {
+      if (!isPanning) return;
+      if (panPointerId !== null && e && e.pointerId !== panPointerId) return;
+
+      isPanning = false;
+      panPointerId = null;
+      stage.classList.remove("panning");
+
+      if (panMoved) {
+        justPanned = true;
+        setTimeout(() => { justPanned = false; }, 0);
+      }
+    }
+
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+
+    /* ======== Hover + copy behavior ======== */
+    function showTooltip(text, x, y) {
+      tooltip.textContent = text;
+      tooltip.style.left = (x + 12) + "px";
+      tooltip.style.top = (y + 12) + "px";
+      tooltip.style.display = "block";
+    }
+    function hideTooltip() {
+      tooltip.style.display = "none";
+    }
+
+    function buildTooltipText(number, sat, inscriptionId) {
+      const line1 = `${number}.bitmap`;
+      const line2 = (sat === null || sat === undefined) ? "" : String(sat);
+      const line3 = (inscriptionId === null || inscriptionId === undefined) ? "-" : String(inscriptionId);
+      return [line1, line2, line3].join("\n");
+    }
+
+    async function resolveHoverData(number, mouseX, mouseY) {
+      if (hoverAbort) hoverAbort.abort();
+      hoverAbort = new AbortController();
+      const { signal } = hoverAbort;
+
+      lastHoverData = { number, sat: null, inscriptionId: null };
+      showTooltip(buildTooltipText(number, null, null), mouseX, mouseY);
+
+      try {
+        let sat = satCache.get(number);
+        if (sat === undefined) {
+          sat = await window.getBitmapSat(number);
+          satCache.set(number, sat);
+        }
+        if (signal.aborted) return;
+
+        lastHoverData.sat = sat;
+        showTooltip(buildTooltipText(number, sat, lastHoverData.inscriptionId), mouseX, mouseY);
+
+        let inscriptionId = inscriptionCache.get(number);
+        if (inscriptionId === undefined) {
+          inscriptionId = await window.getBitmapInscriptionId(number, { signal });
+          inscriptionCache.set(number, inscriptionId ?? null);
+        }
+        if (signal.aborted) return;
+
+        lastHoverData.inscriptionId = inscriptionId ?? null;
+        showTooltip(buildTooltipText(number, sat, inscriptionId), mouseX, mouseY);
+      } catch (e) {
+        if (signal.aborted) return;
+        showTooltip(buildTooltipText(number, lastHoverData.sat, lastHoverData.inscriptionId), mouseX, mouseY);
+      }
+    }
+
+    function getNumberFromMouseEvent(e) {
+      if (!lastRender) return null;
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+
+      const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+      const y = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+
+      if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
+
+      const localIdx = y * canvas.width + x;
+      if (localIdx < 0 || localIdx >= lastRender.total) return null;
+
+      return lastRender.start + localIdx;
+    }
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (isPanning) return;
+
+      const number = getNumberFromMouseEvent(e);
+      if (number === null) {
+        hideTooltip();
+        return;
+      }
+
+      if (number !== lastHoverNumber) {
+        lastHoverNumber = number;
+        resolveHoverData(number, e.clientX, e.clientY);
+      } else {
+        if (tooltip.style.display !== "none") {
+          tooltip.style.left = (e.clientX + 12) + "px";
+          tooltip.style.top = (e.clientY + 12) + "px";
+        }
+      }
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      lastHoverNumber = null;
+      if (hoverAbort) hoverAbort.abort();
+      hideTooltip();
+    });
+
+    // Left click copies SAT
+    canvas.addEventListener("click", async (e) => {
+      if (justPanned) return;
+
+      const number = getNumberFromMouseEvent(e);
+      if (number === null) return;
+
+      let sat = lastHoverData.number === number ? lastHoverData.sat : satCache.get(number);
+
+      if (sat === undefined || sat === null) {
+        try {
+          sat = await window.getBitmapSat(number);
+          satCache.set(number, sat);
+        } catch {}
+      }
+
+      if (sat !== undefined && sat !== null) {
+        try { await navigator.clipboard.writeText(String(sat)); } catch {}
+      }
+    });
+
+    // Right click copies inscriptionId
+    canvas.addEventListener("contextmenu", async (e) => {
+      e.preventDefault();
+      if (isPanning) return;
+
+      const number = getNumberFromMouseEvent(e);
+      if (number === null) return;
+
+      let id = lastHoverData.number === number ? lastHoverData.inscriptionId : inscriptionCache.get(number);
+
+      if (id === undefined) {
+        try {
+          id = await window.getBitmapInscriptionId(number);
+          inscriptionCache.set(number, id ?? null);
+        } catch {
+          id = null;
+        }
+      }
+
+      if (id) {
+        try { await navigator.clipboard.writeText(String(id)); } catch {}
+      }
+    });
+
+    // Demo on load
+    startRenderRange(0, 5000, "parity");
+  </script>
+</body>
+</html>
