@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>⚡ Bitmap Parcel Scanner</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#000; color:#ff9900; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    input, button { font-size: 16px; }
+    input {
+      flex: 1;
+      min-width: 220px;
+      padding: 10px 12px;
+      border: 1px solid #ff9900;
+      border-radius: 8px;
+      background: #250326;
+      color: #fff;
+      outline: none;
+    }
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      background: linear-gradient(145deg, #d4af37, #8b7500);
+      color: #000;
+    }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .status { margin-top: 10px; color: #ffd27b; white-space: pre-wrap; }
+    .panel {
+      margin-top: 14px;
+      background: #0b0010;
+      border: 1px solid #ff9900;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 18px 2px rgba(255,153,0,.25);
+    }
+    .panelHeader {
+      padding: 10px 12px;
+      background: #120012;
+      border-bottom: 1px solid rgba(255,153,0,.35);
+      display:flex; justify-content:space-between; gap:10px; align-items:center;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255,153,0,.12);
+      border: 1px solid rgba(255,153,0,.35);
+      color: #ffd27b;
+      font-size: 13px;
+    }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid rgba(255,153,0,.18); }
+    th { text-align:left; color:#ffd27b; font-weight: 700; background: rgba(255,153,0,.06); }
+    td { color:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    td.missing { color: rgba(255,255,255,.35); }
+    .err { color: #ff6b6b; }
+    .hint { color:#b8a95d; font-size: 13px; margin-top: 8px; line-height: 1.35; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h2 style="margin: 0 0 10px 0;">⚡ Bitmap Parcel Scanner</h2>
+
+    <div class="row">
+      <input id="bitmapInput" placeholder="Enter bitmap number (e.g. 114588)" />
+      <button id="scanBtn">Scan Parcels</button>
+      <button id="stopBtn" disabled style="background: linear-gradient(145deg,#ff9900,#ff6600);">Stop</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="panel">
+      <div class="panelHeader">
+        <div>
+          <span class="pill" id="pillBitmap">bitmap: —</span>
+          <span class="pill" id="pillTx">txCount: —</span>
+          <span class="pill" id="pillFound">found: —</span>
+        </div>
+        <div>
+          <span class="pill" id="pillPages">pages: —</span>
+        </div>
+      </div>
+
+      <div style="overflow:auto; max-height: 70vh;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:120px;">parcel</th>
+              <th>satId (inscription id)</th>
+              <th style="width:220px;">parcel string</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="3" class="missing">No data yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="hint">
+      Rules used:
+      parcels are detected by reading each child inscription’s <b>content</b> and matching exactly
+      <code style="color:#ffd27b;">N.&lt;bitmap&gt;.bitmap</code>.
+      If duplicates exist for the same parcel number, the earliest (by timestamp, fallback inscription number) wins.
+    </div>
+  </div>
+
+  <!-- =========================
+       OCW Library (from your project)
+       Provides: getBitmapInscriptionId(bitmapNumber)
+       ========================= -->
+  <script>
+    (function (global) {
+      const BASE_URL = "https://ordinals.com";
+      const pages = Array(8).fill(null);
+      const allPages = [
+        `${BASE_URL}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`,
+        `${BASE_URL}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`,
+        `${BASE_URL}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`,
+        `${BASE_URL}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`,
+        `${BASE_URL}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`,
+        `${BASE_URL}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`,
+        `${BASE_URL}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`,
+        `${BASE_URL}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`,
+        `${BASE_URL}/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0`
+      ];
+
+      async function fillPage(page) {
+        let data = await fetch(allPages[page]).then((r) => r.text());
+        if (page === 2 || page === 3) {
+          data = "[" + data + "]";
+          data = JSON.parse(data);
+          data = [data.slice(0, 99999), data.slice(100000, 199999)];
+        } else {
+          try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (e) {}
+          try { data = JSON.parse(data.replaceAll("  ", "")); } catch (e) {}
+        }
+
+        const fullSats = [];
+        data[0].forEach((sat, i) => {
+          fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+        });
+
+        const filledArray = Array(100000).fill(0);
+        data[1].forEach((index, i) => {
+          filledArray[index] = fullSats[i];
+        });
+
+        pages[page] = filledArray;
+      }
+
+      async function getBitmapSat(bitmapNumber) {
+        const page = Math.floor(bitmapNumber / 100000);
+        if (!pages[page]) await fillPage(page);
+        return pages[page][bitmapNumber % 100000];
+      }
+
+      async function getBitmapInscriptionId(bitmapNumber) {
+        const sat = await getBitmapSat(bitmapNumber);
+        const id = await fetch(`${BASE_URL}/r/sat/${sat}/at/0`).then((r) => r.json());
+        return id.id;
+      }
+
+      global.getBitmapInscriptionId = getBitmapInscriptionId;
+      global.getBitmapSat = getBitmapSat; // optional export for debugging
+    })(window);
+  </script>
+
+  <!-- =========================
+       Scanner App
+       ========================= -->
+  <script>
+    const ORD = "https://ordinals.com";
+
+    const els = {
+      bitmapInput: document.getElementById("bitmapInput"),
+      scanBtn: document.getElementById("scanBtn"),
+      stopBtn: document.getElementById("stopBtn"),
+      status: document.getElementById("status"),
+      tbody: document.getElementById("tbody"),
+      pillBitmap: document.getElementById("pillBitmap"),
+      pillTx: document.getElementById("pillTx"),
+      pillFound: document.getElementById("pillFound"),
+      pillPages: document.getElementById("pillPages"),
+    };
+
+    let abortCtrl = null;
+
+    function setStatus(msg, isErr = false) {
+      els.status.innerHTML = isErr ? `<span class="err">${escapeHtml(msg)}</span>` : escapeHtml(msg);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+      }[m]));
+    }
+
+    function parseHeight(v) {
+      const n = parseInt(String(v).trim().replace(/\.bitmap$/i, ""), 10);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+
+    const fetchJson = async (url, signal) => {
+      const r = await fetch(url, { headers: { Accept: "application/json" }, signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      return r.json();
+    };
+
+    const isTextLike = (mime) => {
+      mime = (mime || "").toLowerCase();
+      return (
+        mime.startsWith("text/") ||
+        mime.includes("json") ||
+        mime.includes("javascript") ||
+        mime.includes("html") ||
+        mime.includes("css") ||
+        mime.includes("xml") ||
+        mime.includes("markdown")
+      );
+    };
+
+    function parseParcelNumberFromContent(content, height) {
+      const first = String(content || "").trim().split("\n")[0].trim();
+      const re = new RegExp(`^(\\d+)\\.${height}\\.bitmap$`);
+      const m = first.match(re);
+      return m ? parseInt(m[1], 10) : null;
+    }
+
+    function earlierThan(a, b) {
+      const ta = a.timestamp ?? Number.MAX_SAFE_INTEGER;
+      const tb = b.timestamp ?? Number.MAX_SAFE_INTEGER;
+      if (ta !== tb) return ta < tb;
+      const na = a.number ?? Number.MAX_SAFE_INTEGER;
+      const nb = b.number ?? Number.MAX_SAFE_INTEGER;
+      return na < nb;
+    }
+
+    function renderTable(height, txCount, bestByParcel) {
+      const rows = [];
+      for (let i = 0; i < txCount; i++) {
+        const found = bestByParcel.get(i);
+        const satId = found ? found.id : "";
+        rows.push(`
+          <tr>
+            <td>${i}</td>
+            <td class="${satId ? "" : "missing"}">${satId || "—"}</td>
+            <td class="${satId ? "" : "missing"}">${i}.${height}.bitmap</td>
+          </tr>
+        `);
+      }
+      els.tbody.innerHTML = rows.join("") || `<tr><td colspan="3" class="missing">No parcels.</td></tr>`;
+    }
+
+    async function scanBitmapParcels(height) {
+      abortCtrl = new AbortController();
+      const { signal } = abortCtrl;
+
+      // UI init
+      els.scanBtn.disabled = true;
+      els.stopBtn.disabled = false;
+      els.pillBitmap.textContent = `bitmap: ${height}.bitmap`;
+      els.pillTx.textContent = `txCount: …`;
+      els.pillFound.textContent = `found: 0`;
+      els.pillPages.textContent = `pages: 0`;
+      setStatus("Booting OCW → finding bitmap inscription id…");
+
+      // 1) tx count
+      const blockInfo = await fetchJson(`${ORD}/r/blockinfo/${height}`, signal);
+      const txCount = blockInfo?.transaction_count;
+      if (!Number.isFinite(txCount) || txCount < 1) {
+        throw new Error(`Could not read transaction_count for block ${height}`);
+      }
+      els.pillTx.textContent = `txCount: ${txCount}`;
+
+      // 2) bitmap inscription id (OCW)
+      const bitmapInscriptionId = await getBitmapInscriptionId(height);
+      if (!bitmapInscriptionId) throw new Error("OCW failed to return bitmap inscription id");
+
+      setStatus(
+        `Bitmap inscription id: ${bitmapInscriptionId}\nScanning children pages…`
+      );
+
+      // 3) scan children pages
+      const bestByParcel = new Map();
+      let page = 0;
+
+      // concurrency limit for /content fetches
+      const CONCURRENCY = 10;
+
+      while (true) {
+        els.pillPages.textContent = `pages: ${page + 1}`;
+
+        const pageData = await fetchJson(
+          `${ORD}/r/children/${bitmapInscriptionId}/inscriptions/${page}`,
+          signal
+        );
+
+        const kids = pageData?.children || [];
+
+        // process kids in batches
+        for (let start = 0; start < kids.length; start += CONCURRENCY) {
+          const batch = kids.slice(start, start + CONCURRENCY);
+
+          const results = await Promise.all(
+            batch.map(async (child) => {
+              const childId = child?.id;
+              if (!childId) return null;
+
+              // Fast skip if JSON already exposes a non-text content_type
+              if (child.content_type && !isTextLike(child.content_type)) return null;
+
+              let resp;
+              try {
+                resp = await fetch(`${ORD}/content/${childId}`, { signal });
+              } catch {
+                return null;
+              }
+              if (!resp || !resp.ok) return null;
+
+              const mime = child.content_type || resp.headers.get("content-type") || "";
+              if (!isTextLike(mime)) return null;
+
+              let text;
+              try { text = await resp.text(); } catch { return null; }
+
+              const parcelNum = parseParcelNumberFromContent(text, height);
+              if (parcelNum === null) return null;
+              if (parcelNum < 0 || parcelNum >= txCount) return null;
+
+              return {
+                parcelNum,
+                meta: { id: childId, timestamp: child.timestamp, number: child.number }
+              };
+            })
+          );
+
+          for (const r of results) {
+            if (!r) continue;
+            const { parcelNum, meta } = r;
+            const existing = bestByParcel.get(parcelNum);
+            if (!existing || earlierThan(meta, existing)) {
+              bestByParcel.set(parcelNum, meta);
+            }
+          }
+
+          els.pillFound.textContent = `found: ${bestByParcel.size}`;
+          renderTable(height, txCount, bestByParcel);
+        }
+
+        if (!pageData?.more) break;
+        page += 1;
+
+        // Optional early stop if all parcels found
+        if (bestByParcel.size >= txCount) break;
+      }
+
+      setStatus(
+        `Done.\nFound ${bestByParcel.size} / ${txCount} parcels for ${height}.bitmap`
+      );
+
+      return { txCount, bestByParcel };
+    }
+
+    function resetUi() {
+      els.scanBtn.disabled = false;
+      els.stopBtn.disabled = true;
+      abortCtrl = null;
+    }
+
+    els.scanBtn.addEventListener("click", async () => {
+      const height = parseHeight(els.bitmapInput.value);
+      if (height === null) {
+        setStatus("Please enter a valid bitmap number (block height).", true);
+        return;
+      }
+
+      // clear table placeholder
+      els.tbody.innerHTML = `<tr><td colspan="3" class="missing">Scanning…</td></tr>`;
+
+      try {
+        await scanBitmapParcels(height);
+      } catch (e) {
+        if (String(e?.name) === "AbortError") {
+          setStatus("Stopped by user.");
+        } else {
+          setStatus(`Error: ${e?.message || e}`, true);
+        }
+      } finally {
+        resetUi();
+      }
+    });
+
+    els.stopBtn.addEventListener("click", () => {
+      if (abortCtrl) abortCtrl.abort();
+    });
+
+    // nice: Enter triggers scan
+    els.bitmapInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") els.scanBtn.click();
+    });
+  </script>
+</body>
+</html>
