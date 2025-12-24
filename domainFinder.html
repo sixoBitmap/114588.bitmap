@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>⚡ Bitmap Domain Finder</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#000; color:#ff9900; }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+    h2 { margin: 0 0 12px 0; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    input, button { font-size: 16px; }
+    input {
+      flex: 1;
+      min-width: 240px;
+      padding: 10px 12px;
+      border: 1px solid #ff9900;
+      border-radius: 10px;
+      background: #250326;
+      color: #fff;
+      outline: none;
+    }
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      background: linear-gradient(145deg, #d4af37, #8b7500);
+      color: #000;
+    }
+    button:disabled { opacity: .65; cursor: not-allowed; }
+    .status {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #0b0010;
+      border: 1px solid rgba(255,153,0,.45);
+      border-radius: 12px;
+      white-space: pre-wrap;
+      color: #ffd27b;
+      box-shadow: 0 0 18px 2px rgba(255,153,0,.18);
+    }
+    .err { color:#ff6b6b; }
+    .ok { color:#9cffb5; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .pillRow { margin-top: 10px; display:flex; gap:8px; flex-wrap:wrap; }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255,153,0,.12);
+      border: 1px solid rgba(255,153,0,.35);
+      color: #ffd27b;
+      font-size: 13px;
+    }
+    .hint {
+      margin-top: 10px;
+      color:#b8a95d;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>⚡ Bitmap Domain Finder</h2>
+
+    <div class="row">
+      <input id="bitmapInput" placeholder="bitmap number (block height) e.g. 114588" />
+      <input id="domainInput" placeholder="domainName e.g. example.com" />
+      <button id="findBtn">Find</button>
+      <button id="stopBtn" disabled style="background:linear-gradient(145deg,#ff9900,#ff6600);">Stop</button>
+    </div>
+
+    <div class="pillRow">
+      <span class="pill" id="pillBitmap">bitmap: —</span>
+      <span class="pill" id="pillDomain">domain: —</span>
+      <span class="pill" id="pillPages">pages: —</span>
+      <span class="pill" id="pillScanned">scanned: —</span>
+    </div>
+
+    <div id="status" class="status">Enter a bitmap + domainName, then click Find.</div>
+
+    <div class="hint">
+      This searches <b>children inscriptions</b> of <code class="mono">&lt;bitmap&gt;.bitmap</code> and looks for
+      <code class="mono">domainName</code> inside each child’s <b>text content</b>. If multiple matches exist, it returns
+      the <b>earliest created</b> one (timestamp, fallback inscription number).
+    </div>
+  </div>
+
+  <!-- =========================
+       OCW Library (as you provided)
+       Provides: getBitmapInscriptionId(bitmapNumber)
+       ========================= -->
+  <script>
+    (function(global) {
+      const BASE_URL = "https://ordinals.com";
+      const pages = Array(8).fill(null);
+      const allPages = [
+        `${BASE_URL}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`,
+        `${BASE_URL}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`,
+        `${BASE_URL}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`,
+        `${BASE_URL}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`,
+        `${BASE_URL}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`,
+        `${BASE_URL}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`,
+        `${BASE_URL}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`,
+        `${BASE_URL}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`,
+        `${BASE_URL}/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0`
+      ];
+
+      async function fillPage(page) {
+        let data = await fetch(allPages[page]).then((r) => r.text());
+        if (page === 2 || page === 3) {
+          data = "[" + data + "]";
+          data = JSON.parse(data);
+          data = [data.slice(0, 99999), data.slice(100000, 199999)];
+        } else {
+          try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (e) {}
+          try { data = JSON.parse(data.replaceAll("  ", "")); } catch (e) {}
+        }
+
+        const fullSats = [];
+        data[0].forEach((sat, i) => {
+          fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+        });
+
+        const filledArray = Array(100000).fill(0);
+        data[1].forEach((index, i) => {
+          filledArray[index] = fullSats[i];
+        });
+
+        pages[page] = filledArray;
+      }
+
+      async function getBitmapSat(bitmapNumber) {
+        const page = Math.floor(bitmapNumber / 100000);
+        if (!pages[page]) await fillPage(page);
+        return pages[page][bitmapNumber % 100000];
+      }
+
+      async function getBitmapInscriptionId(bitmapNumber) {
+        const sat = await getBitmapSat(bitmapNumber);
+        const id = await fetch(`${BASE_URL}/r/sat/${sat}/at/0`).then((r) => r.json());
+        return id.id;
+      }
+
+      global.getBitmapInscriptionId = getBitmapInscriptionId;
+    })(window);
+  </script>
+
+  <!-- =========================
+       Domain Finder App
+       ========================= -->
+  <script>
+    const ORD = "https://ordinals.com";
+
+    const el = {
+      bitmap: document.getElementById("bitmapInput"),
+      domain: document.getElementById("domainInput"),
+      findBtn: document.getElementById("findBtn"),
+      stopBtn: document.getElementById("stopBtn"),
+      status: document.getElementById("status"),
+      pillBitmap: document.getElementById("pillBitmap"),
+      pillDomain: document.getElementById("pillDomain"),
+      pillPages: document.getElementById("pillPages"),
+      pillScanned: document.getElementById("pillScanned"),
+    };
+
+    let abortCtrl = null;
+
+    const escapeHtml = (s) =>
+      String(s).replace(/[&<>"']/g, (m) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      }[m]));
+
+    function setStatus(msg, kind = "info") {
+      const cls = kind === "err" ? "err" : kind === "ok" ? "ok" : "";
+      el.status.innerHTML = cls ? `<span class="${cls}">${escapeHtml(msg)}</span>` : escapeHtml(msg);
+    }
+
+    function parseHeight(v) {
+      const n = parseInt(String(v).trim().replace(/\.bitmap$/i, ""), 10);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+
+    const fetchJson = async (url, signal) => {
+      const r = await fetch(url, { headers: { Accept: "application/json" }, signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+      return r.json();
+    };
+
+    const isTextLike = (mime) => {
+      mime = (mime || "").toLowerCase();
+      return (
+        mime.startsWith("text/") ||
+        mime.includes("json") ||
+        mime.includes("javascript") ||
+        mime.includes("html") ||
+        mime.includes("css") ||
+        mime.includes("xml") ||
+        mime.includes("markdown")
+      );
+    };
+
+    const earlierThan = (a, b) => {
+      const ta = a.timestamp ?? Number.MAX_SAFE_INTEGER;
+      const tb = b.timestamp ?? Number.MAX_SAFE_INTEGER;
+      if (ta !== tb) return ta < tb;
+      const na = a.number ?? Number.MAX_SAFE_INTEGER;
+      const nb = b.number ?? Number.MAX_SAFE_INTEGER;
+      return na < nb;
+    };
+
+    /**
+     * Finds earliest-created child inscription whose text content contains domainName.
+     * Returns satId (inscription id) or null.
+     */
+    async function findDomainChildSatId(domainName, bitmapNumber, { caseInsensitive = true } = {}) {
+      const height = parseInt(String(bitmapNumber).trim().replace(/\.bitmap$/i, ""), 10);
+      if (!Number.isFinite(height) || height < 0) throw new Error("Invalid bitmap number");
+
+      const needleRaw = String(domainName ?? "").trim();
+      if (!needleRaw) throw new Error("domainName is empty");
+      const needle = caseInsensitive ? needleRaw.toLowerCase() : needleRaw;
+
+      // OCW: bitmap -> bitmap inscription id
+      const bitmapInscriptionId = await getBitmapInscriptionId(height);
+      if (!bitmapInscriptionId) throw new Error("OCW did not return bitmap inscription id");
+
+      let best = null; // { id, timestamp, number }
+      let page = 0;
+      let scanned = 0;
+
+      while (true) {
+        const pageData = await fetchJson(`${ORD}/r/children/${bitmapInscriptionId}/inscriptions/${page}`, abortCtrl?.signal);
+        const kids = pageData?.children || [];
+
+        for (const child of kids) {
+          if (abortCtrl?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+          const childId = child?.id;
+          if (!childId) continue;
+
+          // skip non-text by hint
+          if (child.content_type && !isTextLike(child.content_type)) continue;
+
+          let resp;
+          try {
+            resp = await fetch(`${ORD}/content/${childId}`, { signal: abortCtrl.signal });
+          } catch {
+            continue;
+          }
+          if (!resp || !resp.ok) continue;
+
+          const mime = child.content_type || resp.headers.get("content-type") || "";
+          if (!isTextLike(mime)) continue;
+
+          let text;
+          try { text = await resp.text(); } catch { continue; }
+
+          scanned++;
+          el.pillScanned.textContent = `scanned: ${scanned}`;
+
+          const hay = caseInsensitive ? text.toLowerCase() : text;
+          if (hay.includes(needle)) {
+            const candidate = { id: childId, timestamp: child.timestamp, number: child.number };
+            if (!best || earlierThan(candidate, best)) best = candidate;
+          }
+        }
+
+        if (!pageData?.more) break;
+        page++;
+        el.pillPages.textContent = `pages: ${page + 1}`;
+      }
+
+      return best ? best.id : null;
+    }
+
+    async function run() {
+      const height = parseHeight(el.bitmap.value);
+      const domainName = String(el.domain.value || "").trim();
+
+      if (height === null) return setStatus("Enter a valid bitmap number (block height).", "err");
+      if (!domainName) return setStatus("Enter a domainName to search for.", "err");
+
+      el.pillBitmap.textContent = `bitmap: ${height}.bitmap`;
+      el.pillDomain.textContent = `domain: ${domainName}`;
+      el.pillPages.textContent = `pages: 0`;
+      el.pillScanned.textContent = `scanned: 0`;
+
+      abortCtrl = new AbortController();
+      el.findBtn.disabled = true;
+      el.stopBtn.disabled = false;
+
+      try {
+        setStatus("Searching children…");
+        const satId = await findDomainChildSatId(domainName, height);
+
+        if (satId) {
+          setStatus(`FOUND ✅\n\nsatId: ${satId}\ncontent: ${ORD}/content/${satId}`, "ok");
+        } else {
+          setStatus("Not found ❌\nNo child inscription text contained that domainName.", "err");
+        }
+      } catch (e) {
+        if (String(e?.name) === "AbortError") {
+          setStatus("Stopped by user.");
+        } else {
+          setStatus(`Error: ${e?.message || e}`, "err");
+        }
+      } finally {
+        abortCtrl = null;
+        el.findBtn.disabled = false;
+        el.stopBtn.disabled = true;
+      }
+    }
+
+    el.findBtn.addEventListener("click", run);
+    el.stopBtn.addEventListener("click", () => abortCtrl?.abort());
+
+    el.bitmap.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+    el.domain.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  </script>
+</body>
+</html>
