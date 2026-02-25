@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bitmap Atlas (Real Sat X + Orange Rects)</title>
+  <style>
+    :root{
+      --paper:#fbf6ea;
+      --ink:#0f0f0f;
+      --orange:#f28c28;
+      --orangeLite: rgba(242,140,40,.22);
+      --orangeMid: rgba(242,140,40,.45);
+      --panel:#fffdf7;
+      --border:#e6dcc8;
+    }
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; background: var(--paper); color: var(--ink); }
+    header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(0deg, var(--paper), #fff); }
+    .title { font-weight: 800; letter-spacing: .2px; display:flex; align-items:center; gap:10px; }
+    .subtitle { font-size: 12.5px; opacity: .78; margin-top: 4px; }
+    .wrap { display: grid; grid-template-columns: 1fr 380px; gap: 0; height: calc(100vh - 70px); }
+    .left { padding: 16px; overflow: hidden; }
+    .right { border-left: 1px solid var(--border); padding: 12px; overflow: auto; background: var(--panel); }
+
+    .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+    label { display: grid; gap: 6px; font-size: 14px; }
+    input[type="number"], input[type="text"] { padding: 8px; width: 170px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    select { padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    button { padding: 9px 12px; cursor: pointer; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    button:hover { border-color: #d7c8ad; }
+
+    #status { margin-top: 10px; font-size: 13px; opacity: 0.85; white-space: pre-wrap; }
+
+    .canvasWrap{
+      position: relative;
+      margin-top: 12px;
+      height: 72vh;
+    }
+    canvas {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: var(--paper);
+    }
+
+    .loadingOverlay{
+      position:absolute;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+    }
+    .loadingOverlay.show{ display:flex; }
+
+    .spinnerBox{
+      display:grid;
+      place-items:center;
+      gap:10px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      background: rgba(251,246,234,.92);
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,.10);
+      backdrop-filter: blur(2px);
+    }
+    .spinner{
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 4px solid rgba(242,140,40,.25);
+      border-top-color: rgba(15,15,15,.85);
+      animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinnerText{
+      font-size: 12.5px;
+      opacity: .85;
+      text-align:center;
+      max-width: 260px;
+      line-height: 1.25;
+    }
+
+    .hint { font-size: 13px; opacity: 0.85; margin-top: 8px; line-height: 1.35; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(0,0,0,.06); padding: 2px 6px; border-radius: 8px; }
+
+    .panel-title { font-weight: 800; margin: 4px 0 10px; }
+    .small { font-size: 12px; opacity: 0.8; }
+    .listControls { display: grid; gap: 8px; margin-top: 10px; }
+    .listControls input[type="number"] { width: 140px; }
+    .list { margin-top: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+    .item {
+      padding: 7px 9px;
+      border-radius: 10px;
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 10px;
+      border: 1px solid transparent;
+    }
+    .item:nth-child(odd) { background: #fff; }
+    .item:hover { border-color: var(--border); }
+    .badge { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .selected { border-color: #ff0000 !important; box-shadow: 0 0 0 2px rgba(255,0,0,.12) inset; }
+    .muted { opacity: 0.75; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <span style="font-size:18px">🧭</span>
+    <span>Bitmap Atlas</span>
+    <span style="font-size:12px; opacity:.75; font-weight:600;">(X = real sat value)</span>
+  </div>
+  <div class="subtitle">Drag to pan, wheel to zoom, double click to reset. Grid can go into negative coordinates (free roam).</div>
+</header>
+
+<div class="wrap">
+  <div class="left">
+    <div class="row">
+      <button id="prep">Precompute ALL (load + sort)</button>
+
+      <label>
+        Projection
+        <select id="proj">
+          <option value="on" selected>On</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+
+      <label>
+        Rect size (px)
+        <input id="rectSize" type="number" value="5" min="1" step="1" />
+      </label>
+
+      <label>
+        Max rects per frame
+        <input id="maxPts" type="number" value="250000" min="50000" step="50000" />
+      </label>
+
+      <label>
+        Find bitmap (e.g. 12345 or 12345.b)
+        <input id="find" type="text" placeholder="e.g. 12345 or 12345.b" />
+      </label>
+      <button id="findBtn">Select</button>
+      <button id="clearSel">Clear</button>
+    </div>
+
+    <div class="hint">
+      Map legend:
+      <br/>• <b>Y</b> = bitmap number (0, 1, 2, …)
+      <br/>• <b>X</b> = <b>real sat value</b> (axis goes to the last sat ever created)
+      <br/>Each bitmap is an <b>orange rectangle</b> at its (sat, bitmap) coordinate.
+      <br/>Controls: <span class="kbd">Wheel</span> zoom, <span class="kbd">Drag</span> pan, <span class="kbd">Double click</span> reset.
+    </div>
+
+    <div id="status"></div>
+
+    <div class="canvasWrap">
+      <canvas id="c"></canvas>
+
+      <div id="loadingOverlay" class="loadingOverlay">
+        <div class="spinnerBox">
+          <div class="spinner"></div>
+          <div id="loadingText" class="spinnerText">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="right">
+    <div class="panel-title">Sat-sorted list (XRank → bitmap)</div>
+    <div class="small">
+      Rows show <b>XRank</b>, <b>bitmap</b>, and <b>sat</b>. Entries with <b>sat=0</b> are skipped.
+      Click a row to select it.
+    </div>
+
+    <div class="listControls">
+      <div class="row" style="gap:8px">
+        <label>
+          Start XRank
+          <input id="listStart" type="number" value="0" step="1000" />
+        </label>
+        <label>
+          Count (non-zero sats)
+          <input id="listCount" type="number" value="200" min="20" step="20" />
+        </label>
+      </div>
+      <div class="row" style="gap:8px">
+        <button id="refreshList">Refresh list</button>
+        <button id="jumpSel">Jump to selected</button>
+      </div>
+      <div class="small muted" id="listMeta"></div>
+    </div>
+
+    <div id="list" class="list"></div>
+  </aside>
+</div>
+
+<script>
+/***********************
+ * 0) LOADING OVERLAY
+ ***********************/
+const overlayEl = document.getElementById("loadingOverlay");
+const overlayTextEl = document.getElementById("loadingText");
+function showLoading(msg) {
+  overlayTextEl.textContent = msg || "Loading…";
+  overlayEl.classList.add("show");
+}
+function hideLoading() {
+  overlayEl.classList.remove("show");
+}
+
+/***********************
+ * SAT SUPPLY CAP (X axis max)
+ * last sat that will ever exist (protocol accounting cap)
+ ***********************/
+const MAX_SATS_EVER = 2099999997690000;
+
+/***********************
+ * 1) SAT INDEX LOADER
+ ***********************/
+(function (global) {
+  const BASE_URL = "https://ordinals.com";
+  const allPages = [
+    `${BASE_URL}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`,
+    `${BASE_URL}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`,
+    `${BASE_URL}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`,
+    `${BASE_URL}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`,
+    `${BASE_URL}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`,
+    `${BASE_URL}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`,
+    `${BASE_URL}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`,
+    `${BASE_URL}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`,
+    `${BASE_URL}/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0`
+  ];
+
+  const pages = Array(allPages.length).fill(null);
+
+  async function fillPage(page) {
+    let data = await fetch(allPages[page]).then((r) => r.text());
+
+    if (page === 2 || page === 3) {
+      data = "[" + data + "]";
+      data = JSON.parse(data);
+      data = [data.slice(0, 99999), data.slice(100000, 199999)];
+    } else {
+      try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (e) {}
+      try { data = JSON.parse(data.replaceAll("  ", "")); } catch (e) {}
+    }
+
+    const fullSats = [];
+    data[0].forEach((sat, i) => {
+      fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+    });
+
+    const filledArray = Array(100000).fill(0);
+    data[1].forEach((index, i) => {
+      filledArray[index] = fullSats[i];
+    });
+
+    pages[page] = filledArray;
+  }
+
+  async function loadAllPages(onProgress) {
+    for (let p = 0; p < pages.length; p++) {
+      if (!pages[p]) {
+        onProgress?.(`Loading page ${p + 1}/${pages.length}…`);
+        await fillPage(p);
+      }
+      await new Promise(r => setTimeout(r, 0));
+    }
+    onProgress?.(`All pages loaded.`);
+    return pages;
+  }
+
+  global.__bitmapSatIndex = { loadAllPages, pages, pageCount: allPages.length };
+})(window);
+
+/***********************
+ * 2) CANVAS + VIEW
+ ***********************/
+const $ = (id) => document.getElementById(id);
+const canvas = $("c");
+const ctx = canvas.getContext("2d");
+const statusEl = $("status");
+function setStatus(s) { statusEl.textContent = s; }
+
+let size = { w: 0, h: 0, dpr: 1 };
+const pad = 78;
+
+function fitCanvas() {
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  size = { w: cssW, h: cssH, dpr };
+}
+
+// Free-roam view (can go negative)
+const view = { xMin: -10, xMax: 10, yMin: -10, yMax: 10 };
+
+function plotDims() {
+  return { plotW: size.w - 2 * pad, plotH: size.h - 2 * pad };
+}
+
+function worldToScreen(x, y) {
+  const { plotW, plotH } = plotDims();
+  const sx = pad + ((x - view.xMin) / (view.xMax - view.xMin)) * plotW;
+  const sy = pad + ((view.yMax - y) / (view.yMax - view.yMin)) * plotH;
+  return { sx, sy };
+}
+
+function screenToWorld(sx, sy) {
+  const { plotW, plotH } = plotDims();
+  const x = view.xMin + ((sx - pad) / plotW) * (view.xMax - view.xMin);
+  const y = view.yMax - ((sy - pad) / plotH) * (view.yMax - view.yMin);
+  return { x, y };
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/***********************
+ * 3) DATA
+ ***********************/
+let ready = false;
+let N = 0;
+let sats = null;
+let xRankByBitmap = null;
+let bitmapByXRank = null;
+let minSat = 0;
+let maxSat = 1;
+let selectedBitmap = null;
+
+function resetView() {
+  if (!ready) {
+    view.xMin = -10; view.xMax = 10;
+    view.yMin = -10; view.yMax = 10;
+    return;
+  }
+  view.yMin = 0;
+  view.yMax = Math.max(1, N - 1);
+
+  // Force the X axis to span the entire sat universe:
+  view.xMin = 0;
+  view.xMax = MAX_SATS_EVER;
+}
+
+async function precomputeAll() {
+  ready = false;
+  sats = null; xRankByBitmap = null; bitmapByXRank = null;
+
+  fitCanvas();
+  render();
+
+  showLoading("Loading bitmap sat pages…");
+  setStatus("Step 1/3: loading pages…");
+
+  const pages = await window.__bitmapSatIndex.loadAllPages((m) => {
+    setStatus("Step 1/3: " + m);
+    showLoading(m);
+  });
+
+  N = pages.length * 100000;
+
+  showLoading(`Flattening sats… (0 / ${N.toLocaleString()})`);
+  setStatus(`Step 2/3: flatten sats for N=${N.toLocaleString()}…`);
+
+  sats = new Float64Array(N);
+  let k = 0;
+  minSat = Number.POSITIVE_INFINITY;
+  maxSat = Number.NEGATIVE_INFINITY;
+
+  for (let p = 0; p < pages.length; p++) {
+    const arr = pages[p];
+    for (let i = 0; i < 100000; i++) {
+      const v = arr[i];
+      sats[k++] = v;
+      if (v < minSat) minSat = v;
+      if (v > maxSat) maxSat = v;
+    }
+    const msg = `Flattening sats… (${k.toLocaleString()} / ${N.toLocaleString()})`;
+    setStatus(`Step 2/3: ${msg}`);
+    showLoading(msg);
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  showLoading("Sorting sats to compute XRanks… (this is the heavy part)");
+  setStatus("Step 3/3: sorting to compute sat ranks (heavy)…");
+
+  const idx = new Array(N);
+  for (let i = 0; i < N; i++) idx[i] = i;
+
+  idx.sort((a, b) => {
+    const da = sats[a], db = sats[b];
+    if (da !== db) return da - db;
+    return a - b;
+  });
+
+  xRankByBitmap = new Uint32Array(N);
+  bitmapByXRank = new Uint32Array(N);
+
+  for (let rank = 0; rank < N; rank++) {
+    const b = idx[rank];
+    xRankByBitmap[b] = rank;
+    bitmapByXRank[rank] = b;
+
+    if (rank % 300000 === 0) {
+      const msg = `Assigning ranks… (${rank.toLocaleString()} / ${N.toLocaleString()})`;
+      setStatus("Step 3/3: " + msg);
+      showLoading(msg);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  ready = true;
+  resetView();
+  hideLoading();
+
+  setStatus(
+    `Ready ✅\n` +
+    `N=${N.toLocaleString()} bitmaps\n` +
+    `Loaded sat range: [${Math.round(minSat).toLocaleString()} .. ${Math.round(maxSat).toLocaleString()}]\n` +
+    `X axis max: ${MAX_SATS_EVER.toLocaleString()} (last sat ever created)`
+  );
+
+  requestAnimationFrame(() => { render(); renderList(); });
+}
+
+/***********************
+ * 4) GRID
+ ***********************/
+function niceStep(range, targetTicks) {
+  const raw = range / Math.max(2, targetTicks);
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const m = raw / pow;
+  let nice;
+  if (m <= 1) nice = 1;
+  else if (m <= 2) nice = 2;
+  else if (m <= 5) nice = 5;
+  else nice = 10;
+  return nice * pow;
+}
+
+function drawMapGrid() {
+  const { plotW, plotH } = plotDims();
+  ctx.clearRect(0, 0, size.w, size.h);
+
+  ctx.strokeStyle = "#0f0f0f";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.rect(pad, pad, plotW, plotH);
+  ctx.stroke();
+
+  const xRange = view.xMax - view.xMin;
+  const yRange = view.yMax - view.yMin;
+
+  const xStepMajor = niceStep(xRange, 7);
+  const yStepMajor = niceStep(yRange, 7);
+  const xStepMinor = xStepMajor / 5;
+  const yStepMinor = yStepMajor / 5;
+
+  ctx.strokeStyle = "rgba(242,140,40,.22)";
+  ctx.lineWidth = 1;
+
+  const xStartMinor = Math.floor(view.xMin / xStepMinor) * xStepMinor;
+  for (let x = xStartMinor; x <= view.xMax; x += xStepMinor) {
+    const { sx } = worldToScreen(x, view.yMin);
+    ctx.beginPath();
+    ctx.moveTo(sx, pad);
+    ctx.lineTo(sx, pad + plotH);
+    ctx.stroke();
+  }
+  const yStartMinor = Math.floor(view.yMin / yStepMinor) * yStepMinor;
+  for (let y = yStartMinor; y <= view.yMax; y += yStepMinor) {
+    const { sy } = worldToScreen(view.xMin, y);
+    ctx.beginPath();
+    ctx.moveTo(pad, sy);
+    ctx.lineTo(pad + plotW, sy);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(242,140,40,.45)";
+  ctx.lineWidth = 1.2;
+
+  const xStartMajor = Math.floor(view.xMin / xStepMajor) * xStepMajor;
+  for (let x = xStartMajor; x <= view.xMax; x += xStepMajor) {
+    const { sx } = worldToScreen(x, view.yMin);
+    ctx.beginPath();
+    ctx.moveTo(sx, pad);
+    ctx.lineTo(sx, pad + plotH);
+    ctx.stroke();
+  }
+  const yStartMajor = Math.floor(view.yMin / yStepMajor) * yStepMajor;
+  for (let y = yStartMajor; y <= view.yMax; y += yStepMajor) {
+    const { sy } = worldToScreen(view.xMin, y);
+    ctx.beginPath();
+    ctx.moveTo(pad, sy);
+    ctx.lineTo(pad + plotW, sy);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "#0f0f0f";
+  ctx.lineWidth = 1.4;
+  if (view.xMin <= 0 && view.xMax >= 0) {
+    const { sx } = worldToScreen(0, view.yMin);
+    ctx.beginPath();
+    ctx.moveTo(sx, pad);
+    ctx.lineTo(sx, pad + plotH);
+    ctx.stroke();
+  }
+  if (view.yMin <= 0 && view.yMax >= 0) {
+    const { sy } = worldToScreen(view.xMin, 0);
+    ctx.beginPath();
+    ctx.moveTo(pad, sy);
+    ctx.lineTo(pad + plotW, sy);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#0f0f0f";
+  ctx.font = "12px system-ui, Arial";
+  for (let x = xStartMajor; x <= view.xMax; x += xStepMajor) {
+    const { sx } = worldToScreen(x, view.yMin);
+    ctx.beginPath();
+    ctx.moveTo(sx, pad + plotH);
+    ctx.lineTo(sx, pad + plotH + 6);
+    ctx.stroke();
+    ctx.fillText(Math.round(x).toLocaleString(), sx + 3, pad + plotH + 20);
+  }
+  for (let y = yStartMajor; y <= view.yMax; y += yStepMajor) {
+    const { sy } = worldToScreen(view.xMin, y);
+    ctx.beginPath();
+    ctx.moveTo(pad - 6, sy);
+    ctx.lineTo(pad, sy);
+    ctx.stroke();
+    ctx.fillText(Math.round(y).toLocaleString(), 8, sy + 4);
+  }
+
+  ctx.font = "14px system-ui, Arial";
+  ctx.fillText("X: real sat value", pad, pad - 12);
+  ctx.fillText("Y: bitmap index", pad + plotW - 160, pad - 12);
+}
+
+/***********************
+ * 5) RENDER
+ ***********************/
+function render() {
+  fitCanvas();
+  drawMapGrid();
+
+  if (!ready) {
+    ctx.fillStyle = "#0f0f0f";
+    ctx.font = "14px system-ui, Arial";
+    ctx.fillText("Click “Precompute ALL” to load and compute ranks.", 20, 34);
+    return;
+  }
+
+  const { plotW, plotH } = plotDims();
+  const rectSize = Math.max(1, Number($("rectSize").value));
+  const maxPts = Math.max(50000, Number($("maxPts").value));
+  const projOn = $("proj").value === "on";
+
+  const y0 = clamp(Math.floor(view.yMin), 0, N - 1);
+  const y1 = clamp(Math.ceil(view.yMax),  0, N - 1);
+
+  const visibleCount = Math.max(1, y1 - y0 + 1);
+  const step = Math.max(1, Math.ceil(visibleCount / maxPts));
+
+  function drawProjection(sx, sy) {
+    const leftX = pad;
+    const bottomY = pad + plotH;
+
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.setLineDash([2, 5]);
+    ctx.strokeStyle = "rgba(15,15,15,.55)";
+
+    ctx.beginPath();
+    ctx.moveTo(leftX, sy);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(sx, bottomY);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.fillStyle = "rgba(242,140,40,.95)";
+  ctx.strokeStyle = "rgba(15,15,15,.25)";
+  ctx.lineWidth = 1;
+
+  for (let y = y0; y <= y1; y += step) {
+    const x = sats[y];
+    if (x < view.xMin || x > view.xMax) continue;
+
+    const { sx, sy } = worldToScreen(x, y);
+
+    if (projOn) drawProjection(sx, sy);
+
+    const half = rectSize / 2;
+    ctx.fillRect(sx - half, sy - half, rectSize, rectSize);
+    if (rectSize >= 4) ctx.strokeRect(sx - half, sy - half, rectSize, rectSize);
+  }
+  ctx.restore();
+
+  if (selectedBitmap !== null && selectedBitmap >= 0 && selectedBitmap < N) {
+    const y = selectedBitmap;
+    const x = sats[y];
+    const { sx, sy } = worldToScreen(x, y);
+
+    ctx.save();
+    ctx.strokeStyle = "#ff0000";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, Math.max(10, rectSize * 2.2), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = "14px system-ui, Arial";
+    ctx.fillStyle = "#ff0000";
+    ctx.fillText(String(y), sx + 12, sy - 12);
+    ctx.restore();
+  }
+}
+
+/***********************
+ * 6) RIGHT LIST (skips sat=0)
+ ***********************/
+function renderList() {
+  if (!ready || !bitmapByXRank) return;
+
+  const start = Math.max(0, Math.min(N - 1, Number($("listStart").value) || 0));
+  const want = Math.max(20, Math.min(5000, Number($("listCount").value) || 200));
+
+  $("listStart").value = String(start);
+  $("listCount").value = String(want);
+
+  const listEl = $("list");
+  listEl.innerHTML = "";
+
+  let r = start;
+  let shown = 0;
+
+  while (r < N && shown < want) {
+    const b = bitmapByXRank[r];
+    const sat = sats[b];
+
+    if (sat !== 0) {
+      const div = document.createElement("div");
+      div.className = "item" + ((selectedBitmap === b) ? " selected" : "");
+      div.innerHTML = `
+        <div class="badge">xRank ${r.toLocaleString()}</div>
+        <div class="badge">${b}<span class="muted"> (sat ${Math.round(sat).toLocaleString()})</span></div>
+      `;
+      div.addEventListener("click", () => {
+        selectedBitmap = b;
+        render();
+        renderList();
+        setStatus(`Selected: ${b} (xRank ${r.toLocaleString()})`);
+      });
+      listEl.appendChild(div);
+      shown++;
+    }
+    r++;
+  }
+
+  const endRank = Math.min(N - 1, r - 1);
+  $("listMeta").textContent =
+    `Start xRank: ${start.toLocaleString()} | showing ${shown.toLocaleString()} items (sat≠0) | scanned to xRank ${endRank.toLocaleString()}`;
+}
+
+$("refreshList").addEventListener("click", renderList);
+$("jumpSel").addEventListener("click", () => {
+  if (!ready || selectedBitmap === null) return;
+  $("listStart").value = String(xRankByBitmap[selectedBitmap]);
+  renderList();
+});
+
+/***********************
+ * 7) PAN + ZOOM
+ ***********************/
+let dragging = false;
+let last = { x: 0, y: 0 };
+
+canvas.addEventListener("mousedown", (e) => { dragging = true; last.x = e.clientX; last.y = e.clientY; });
+window.addEventListener("mouseup", () => dragging = false);
+
+window.addEventListener("mousemove", (e) => {
+  if (!ready) return;
+
+  if (!dragging) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const y = clamp(Math.round(screenToWorld(sx, sy).y), 0, N - 1);
+
+    canvas.title =
+      `bitmap: ${y}\n` +
+      `sat: ${Math.round(sats[y]).toLocaleString()}\n` +
+      `xRank: ${xRankByBitmap[y].toLocaleString()}`;
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const sx0 = last.x - rect.left;
+  const sy0 = last.y - rect.top;
+  const sx1 = e.clientX - rect.left;
+  const sy1 = e.clientY - rect.top;
+
+  last.x = e.clientX; last.y = e.clientY;
+
+  const a = screenToWorld(sx0, sy0);
+  const b = screenToWorld(sx1, sy1);
+
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+
+  view.xMin += dx; view.xMax += dx;
+  view.yMin += dy; view.yMax += dy;
+
+  render();
+});
+
+canvas.addEventListener("wheel", (e) => {
+  if (!ready) return;
+  e.preventDefault();
+
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX - rect.left;
+  const sy = e.clientY - rect.top;
+
+  const anchor = screenToWorld(sx, sy);
+  const zoom = Math.exp(-e.deltaY * 0.0016);
+
+  const eps = 1e-9;
+  const xSpan0 = Math.max(eps, view.xMax - view.xMin);
+  const ySpan0 = Math.max(eps, view.yMax - view.yMin);
+
+  const xSpan = xSpan0 / zoom;
+  const ySpan = ySpan0 / zoom;
+
+  view.xMin = anchor.x - (anchor.x - view.xMin) / zoom;
+  view.xMax = view.xMin + xSpan;
+
+  view.yMin = anchor.y - (anchor.y - view.yMin) / zoom;
+  view.yMax = view.yMin + ySpan;
+
+  render();
+}, { passive: false });
+
+canvas.addEventListener("dblclick", () => { resetView(); render(); });
+window.addEventListener("resize", () => { fitCanvas(); render(); });
+
+/***********************
+ * 8) SEARCH SELECT
+ ***********************/
+function parseBitmapInput(s) {
+  if (!s) return null;
+  s = String(s).trim().toLowerCase();
+  if (s.endsWith(".b")) s = s.slice(0, -2);
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function selectBitmapFromInput() {
+  if (!ready) return;
+  const b = parseBitmapInput($("find").value);
+
+  if (b === null) { setStatus("Invalid input. Use 12345 or 12345.b"); return; }
+  if (b < 0 || b >= N) { setStatus(`Out of range: 0..${(N-1).toLocaleString()}`); return; }
+
+  selectedBitmap = b;
+  render();
+  renderList();
+  setStatus(`Selected: ${b} (xRank ${xRankByBitmap[b].toLocaleString()})`);
+}
+
+$("findBtn").addEventListener("click", selectBitmapFromInput);
+$("find").addEventListener("keydown", (e) => { if (e.key === "Enter") selectBitmapFromInput(); });
+$("clearSel").addEventListener("click", () => { selectedBitmap = null; render(); renderList(); });
+
+/***********************
+ * 9) UI
+ ***********************/
+$("prep").addEventListener("click", () => {
+  precomputeAll().catch(err => {
+    console.error(err);
+    hideLoading();
+    setStatus("Error:\n" + String(err));
+  });
+});
+
+$("proj").addEventListener("change", render);
+$("rectSize").addEventListener("change", render);
+$("maxPts").addEventListener("change", render);
+
+// init
+fitCanvas();
+render();
+</script>
+</body>
+</html>
