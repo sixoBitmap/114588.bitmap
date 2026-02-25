@@ -11,3 +11,5 @@ Welcome at 114588 Portal
 [Domain](https://sixobitmap.github.io/114588.bitmap/domainFinder.html)
 
 [Pixel Painter](https://sixobitmap.github.io/114588.bitmap/pixel_painter.html)
+
+[Pixel Painter](https://sixobitmap.github.io/114588.bitmap/atlas.html)
