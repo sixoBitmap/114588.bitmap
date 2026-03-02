@@ -14,4 +14,4 @@ Welcome at 114588 Portal
 
 [Atlas](https://sixobitmap.github.io/114588.bitmap/atlas.html)
 
-[Live-chat](https://sixobitmap.github.io/114588.bitmap/live-chat.html)
+[Live-chat](https://sixobitmap.github.io/114588.bitmap/live-chat.html) [Live-chat-with-server](https://sixobitmap.github.io/114588.bitmap/live-chat-with-server.html)
