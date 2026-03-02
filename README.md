@@ -13,3 +13,5 @@ Welcome at 114588 Portal
 [Pixel Painter](https://sixobitmap.github.io/114588.bitmap/pixel_painter.html)
 
 [Atlas](https://sixobitmap.github.io/114588.bitmap/atlas.html)
+
+[Live-chat](https://sixobitmap.github.io/114588.bitmap/live-chat.html)
