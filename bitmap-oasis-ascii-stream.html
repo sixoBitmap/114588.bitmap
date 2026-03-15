@@ -131,10 +131,10 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
 .topbar{
   height:38px;background:linear-gradient(90deg,rgba(10,4,0,.98),rgba(6,2,0,.99));
   border-bottom:1px solid rgba(255,106,0,.15);display:flex;align-items:center;
-  padding:0 16px;gap:12px;flex-shrink:0
+  padding:0 12px;gap:8px;flex-shrink:0
 }
-.topbar-title{font-size:.62rem;color:var(--o);letter-spacing:4px;text-shadow:0 0 8px var(--og);flex:1}
-.topbar-fps{font-size:.52rem;color:var(--od)}
+.topbar-title{font-size:.62rem;color:var(--o);letter-spacing:4px;text-shadow:0 0 8px var(--og);margin-right:4px}
+.topbar-fps{font-size:.52rem;color:var(--od);margin-left:auto;white-space:nowrap}
 .topbar-fps span{color:var(--o)}
 .topbar-btn{background:0;border:1px solid var(--od);color:var(--od);font-family:'Courier New',monospace;
   font-size:.52rem;padding:4px 10px;cursor:pointer;letter-spacing:1px;transition:all .15s;white-space:nowrap}
@@ -212,7 +212,7 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
   border-top:1px solid rgba(255,106,0,.12);background:rgba(5,2,0,.6)
 }
 .cc-btn{background:0;border:1px solid var(--od);color:var(--od);font-family:'Courier New',monospace;
-  font-size:.52rem;padding:4px 10px;cursor:pointer;transition:all .15s;letter-spacing:1px;flex:1}
+  font-size:.52rem;padding:4px 12px;cursor:pointer;transition:all .15s;letter-spacing:1px;white-space:nowrap}
 .cc-btn:hover:not(:disabled){border-color:var(--o);color:var(--o);background:rgba(255,106,0,.08)}
 .cc-btn:disabled{opacity:.25;cursor:not-allowed}
 .cc-btn.live{border-color:#0f8;color:#0f8}
@@ -234,6 +234,48 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
   box-shadow:0 0 40px var(--og);z-index:300;opacity:0;transition:opacity .2s;pointer-events:none}
 .notif::before{content:'> ';color:var(--ob)}
 .notif.show{opacity:1}
+
+/* ── CHAT PANEL (inside sidebar) ── */
+.sb-chat{
+  display:flex;flex-direction:column;flex:1;min-height:0;
+  border-top:1px solid rgba(255,106,0,.15);
+  overflow:hidden;
+}
+#sidebar.collapsed .sb-chat{display:none}
+.sb-chat-title{
+  font-size:.5rem;color:var(--od);letter-spacing:3px;
+  padding:8px 12px 4px;flex-shrink:0;
+}
+#chatMessages{
+  flex:1;overflow-y:auto;padding:6px 10px;
+  font-size:.58rem;line-height:1.5;
+  scrollbar-width:thin;scrollbar-color:var(--od) transparent;
+  min-height:0;
+}
+#chatMessages::-webkit-scrollbar{width:3px}
+#chatMessages::-webkit-scrollbar-thumb{background:var(--od)}
+.chat-msg{margin-bottom:3px;word-break:break-word}
+.chat-msg .cm-name{font-weight:700;margin-right:4px}
+.chat-msg .cm-name.you{color:#fa0}
+.chat-msg .cm-name.other{color:var(--ob)}
+.chat-msg .cm-text{color:var(--o)}
+.chat-msg.sys{color:var(--od);font-style:italic}
+.sb-chat-input{
+  display:flex;flex-shrink:0;border-top:1px solid rgba(255,106,0,.12);
+}
+#chatInput{
+  flex:1;background:rgba(8,3,0,.95);border:none;outline:none;
+  color:var(--o);font-family:'Courier New',monospace;font-size:.58rem;
+  padding:7px 10px;
+}
+#chatInput::placeholder{color:var(--td)}
+#chatSend{
+  background:0;border:none;border-left:1px solid rgba(255,106,0,.2);
+  color:var(--od);font-family:'Courier New',monospace;font-size:.52rem;
+  padding:0 10px;cursor:pointer;transition:color .15s,background .15s;
+  white-space:nowrap;
+}
+#chatSend:hover{color:var(--o);background:rgba(255,106,0,.08)}
 
 /* hidden cam canvas */
 #camCanvas{display:none}
@@ -285,6 +327,18 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
       <div class="sb-section-title">STREAMERS</div>
       <div id="sbStreamers"></div>
     </div>
+
+    <!-- CHAT -->
+    <div class="sb-chat">
+      <div class="sb-chat-title">CHAT</div>
+      <div id="chatMessages"></div>
+      <div class="sb-chat-input">
+        <input id="chatInput" placeholder="Type a message… Enter to send" maxlength="200"
+               onkeydown="if(event.key==='Enter')sendChat()">
+        <button id="chatSend" onclick="sendChat()">SEND</button>
+      </div>
+    </div>
+
     <div class="sb-stats">
       FPS: <span id="gFPS">0</span>
       &nbsp;↑<span id="gSent">0B</span>
@@ -296,7 +350,18 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
   <div id="mainContent">
     <div class="topbar">
       <div class="topbar-title">ASCII STREAM</div>
-      <div class="topbar-fps">TX: <span id="txRate">0</span> fps &nbsp; RX streams: <span id="rxCount">0</span></div>
+      <select class="cc-select" id="resSelect" onchange="setResolution(this.value)">
+        <option value="lo">LOW 60×30</option>
+        <option value="mid" selected>MID 80×40</option>
+        <option value="hi">HIGH 100×50</option>
+      </select>
+      <select class="cc-select" id="palSelect" onchange="setPalette(this.value)">
+        <option value="ascii" selected>ASCII</option>
+        <option value="block">BLOCK</option>
+        <option value="matrix">MATRIX</option>
+      </select>
+      <button class="cc-btn" id="camBtn" onclick="toggleCam()">► GO LIVE</button>
+      <div class="topbar-fps">TX: <span id="txRate">0</span> fps &nbsp; RX: <span id="rxCount">0</span></div>
     </div>
     <!-- STREAMS GRID -->
     <div id="streamsArea">
@@ -425,27 +490,67 @@ function onMsg(msg){
       for(const p of msg.players)ensureCard(p.username,p.color);
       updateSidebar();
       requestAnimationFrame(statsLoop);
+      addChatMsg(null, "Connected to BITMAP OASIS", true);
       popup("CONNECTED TO BITMAP OASIS",2000);
       break;
     case"spawn":
       players[msg.username]={color:msg.color};
       ensureCard(msg.username,msg.color);
       updateSidebar();
+      addChatMsg(null, msg.username + " joined", true);
       popup(`${msg.username} JOINED`,1500);
       break;
     case"despawn":
       delete players[msg.username];
       removeCard(msg.username);
       updateSidebar();
+      addChatMsg(null, msg.username + " left", true);
       break;
     case"chat":
-      routeStream(msg.username,msg.message);
+      // Route stream protocol; show everything else as chat
+      if(msg.message.startsWith("ascii:")){
+        routeStream(msg.username, msg.message);
+      } else {
+        addChatMsg(msg.username, msg.message, false);
+      }
       break;
   }
 }
 
 // ═══════════════════════════════════════════════
-//  STREAM PROTOCOL
+//  CHAT
+// ═══════════════════════════════════════════════
+function addChatMsg(name, text, isSystem){
+  const box = document.getElementById("chatMessages");
+  if(!box) return;
+  const d = document.createElement("div");
+  if(isSystem){
+    d.className = "chat-msg sys";
+    d.textContent = "> " + text;
+  } else {
+    d.className = "chat-msg";
+    const isMe = (name === myUser);
+    d.innerHTML = `<span class="cm-name ${isMe?"you":"other"}">${esc(name)}:</span>`
+                + `<span class="cm-text"> ${esc(text)}</span>`;
+  }
+  box.appendChild(d);
+  // Keep last 80 messages
+  while(box.children.length > 80) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+function sendChat(){
+  const inp = document.getElementById("chatInput");
+  const txt = inp.value.trim();
+  if(!txt || !dc || dc.readyState !== "open") return;
+  // Don't allow messages that look like stream protocol
+  if(txt.startsWith("ascii:")) return;
+  addChatMsg(myUser, txt, false);
+  bcast(txt);
+  inp.value = "";
+}
+
+
 //
 //  Sent as broadcast chat messages:
 //
@@ -821,21 +926,8 @@ function initMyCard(){
       <div class="sc-badge off" id="myLiveBadge">OFFLINE</div>
       <div class="sc-fps" id="myFpsLabel">0 fps</div>
     </div>
-    <div class="cam-controls">
-      <select class="cc-select" id="resSelect" onchange="setResolution(this.value)">
-        <option value="lo">LOW 60×30</option>
-        <option value="mid" selected>MID 80×40</option>
-        <option value="hi">HIGH 100×50</option>
-      </select>
-      <select class="cc-select" id="palSelect" onchange="setPalette(this.value)">
-        <option value="ascii" selected>ASCII</option>
-        <option value="block">BLOCK</option>
-        <option value="matrix">MATRIX</option>
-      </select>
-      <button class="cc-btn" id="camBtn" onclick="toggleCam()">► GO LIVE</button>
-    </div>
   `;
-  card.insertBefore(wrap,card.querySelector(".cam-controls"));
+  card.appendChild(wrap);
   area.insertBefore(card,area.firstChild);
   myCardEl=card; myWrap=wrap; myPre=pre;
 }
