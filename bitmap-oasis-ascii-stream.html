@@ -176,7 +176,10 @@ textarea.fi{resize:vertical;min-height:70px;line-height:1.4}
 .sc-badge.live{color:#0f8;border-color:#0f8;animation:livepulse 1s infinite}
 .sc-badge.off{color:var(--td);border-color:var(--od)}
 .sc-badge.you{color:#fa0;border-color:#fa0}
-.sc-fps{font-size:.44rem;color:var(--td);margin-left:auto}
+.sc-fps{font-size:.44rem;color:var(--td)}
+.sc-download{font-size:.44rem;color:var(--od);cursor:pointer;padding:4px 8px;margin-left:8px;border:1px solid var(--od);
+  transition:all .15s;white-space:nowrap;background:0;border-radius:2px}
+.sc-download:hover{color:var(--o);border-color:var(--o);background:rgba(255,106,0,.08)}
 
 /* ascii display — pre sized by direct font-size calculation.
    Font size = cardWidth / cols. No transforms, no scaling tricks.
@@ -925,6 +928,7 @@ function initMyCard(){
       <div class="sc-badge you">YOU</div>
       <div class="sc-badge off" id="myLiveBadge">OFFLINE</div>
       <div class="sc-fps" id="myFpsLabel">0 fps</div>
+      <button class="sc-download" onclick="downloadStream('${esc(myUser)}')">⬇ DOWNLOAD</button>
     </div>
   `;
   card.appendChild(wrap);
@@ -965,6 +969,7 @@ function ensureCard(username,color){
       <div class="sc-name">${esc(username)}</div>
       <div class="sc-badge off" id="live-${username}">OFFLINE</div>
       <div class="sc-fps" id="fps-${username}">— fps</div>
+      <button class="sc-download" onclick="downloadStream('${esc(username)}')">⬇ DOWNLOAD</button>
     </div>
   `;
   card.appendChild(wrap);
@@ -1057,6 +1062,82 @@ function statsLoop(){
     if(fpsEl)fpsEl.textContent=txFPS+" fps";
   }
   requestAnimationFrame(statsLoop);
+}
+
+// ═══════════════════════════════════════════════
+//  DOWNLOAD FUNCTIONS
+// ═══════════════════════════════════════════════
+function downloadStream(username){
+  // Get the card and display
+  let card, pre, wrap, cols, rows;
+  if(username === myUser){
+    if(!myPre) return popup("No stream to download", 2000);
+    pre = myPre;
+    wrap = myWrap;
+    cols = asciiCols;
+    rows = asciiRows;
+  } else {
+    const rc = remoteCards[username];
+    if(!rc || !rc.pre) return popup("Stream not found", 2000);
+    pre = rc.pre;
+    wrap = rc.wrap;
+    cols = rc.w;
+    rows = rc.h;
+  }
+  
+  // Get ASCII text from pre element
+  const asciiText = pre.textContent;
+  
+  // Download as TXT
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+  const filename = `ascii_${username}_${timestamp}.txt`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([asciiText], {type: "text/plain"}));
+  a.download = filename;
+  a.click();
+  
+  // Download as PNG screenshot
+  renderAsciiToImage(wrap, pre, cols, rows, username, timestamp);
+  
+  popup(`Downloading ${username}'s stream`, 2000);
+}
+
+function renderAsciiToImage(wrap, pre, cols, rows, username, timestamp){
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  
+  // Font metrics
+  const fontSize = 10;
+  const lineHeight = 12;
+  const charWidth = 6;
+  const padding = 10;
+  
+  canvas.width = cols * charWidth + padding * 2;
+  canvas.height = rows * lineHeight + padding * 2;
+  
+  // Fill background
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Set text style
+  ctx.font = `${fontSize}px 'Courier New', monospace`;
+  ctx.fillStyle = "#ff6a00";
+  ctx.textBaseline = "top";
+  
+  // Draw ASCII text line by line
+  const lines = pre.textContent.split("\n");
+  for(let i = 0; i < lines.length; i++){
+    ctx.fillText(lines[i], padding, padding + i * lineHeight);
+  }
+  
+  // Download image
+  const filename = `ascii_${username}_${timestamp}.png`;
+  canvas.toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  });
 }
 
 // ═══════════════════════════════════════════════
