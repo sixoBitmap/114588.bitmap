@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>BITMAP CHAIN</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+    :root {
+      --bg:      #0a0a0c;
+      --bg2:     #0d0f12;
+      --bg3:     #111318;
+      --grid:    #12141a;
+      --amber:   #c8873a;
+      --amber2:  #7a4e1c;
+      --amber3:  #3d2609;
+      --dim:     #1c1f28;
+      --dim2:    #252a36;
+      --dimtxt:  #2e3240;
+      --muted:   #4a5060;
+      --txt:     #8a8a90;
+      --white:   #ece8e0;
+      /* block that HAS bitmaps */
+      --BLK:    140px;
+      /* gap block (no bitmaps) */
+      --GAP-SZ: 60px;
+      --CONN:   32px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* no text selection anywhere in the carousel area */
+    #carousel-outer, #carousel-track,
+    .block-item, .gap-item, .h-conn {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: 'Press Start 2P', monospace;
+      background: var(--bg);
+      color: var(--txt);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* pixel grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: .7;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #app {
+      position: relative; z-index: 1;
+      padding: 24px 20px 52px;
+      display: flex; flex-direction: column; gap: 0;
+    }
+
+    /* ── HEADER ── */
+    header { margin-bottom: 20px; }
+    .logo {
+      font-size: 11px; letter-spacing: 3px;
+      color: var(--amber); line-height: 1.9;
+      text-shadow: 2px 2px 0 var(--amber3);
+    }
+    .logo-sub { font-size: 6px; letter-spacing: 2px; color: var(--dimtxt); margin-top: 5px; }
+
+    .px-rule {
+      width: 100%; height: 2px; margin: 14px 0;
+      background: repeating-linear-gradient(
+        90deg,
+        var(--amber3) 0, var(--amber3) 4px,
+        transparent  4px, transparent  8px
+      );
+    }
+
+    /* ── PIXEL BUTTON ── */
+    .px-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--amber); background: var(--bg2);
+      border: 2px solid var(--amber2);
+      padding: 8px 14px; cursor: pointer;
+      box-shadow: 3px 3px 0 var(--amber3);
+      transition: box-shadow .07s, transform .07s;
+      white-space: nowrap; line-height: 1;
+    }
+    .px-btn:hover  { box-shadow: 1px 1px 0 var(--amber3); transform: translate(2px,2px); }
+    .px-btn:active { box-shadow: none; transform: translate(3px,3px); }
+    .px-btn:disabled { opacity: .25; pointer-events: none; }
+
+    /* ── LOADER ── */
+    #loader { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+    .prog-track {
+      width: min(320px, 100%); height: 6px;
+      background: var(--dim); border: 2px solid var(--dimtxt);
+    }
+    .prog-fill {
+      height: 100%;
+      background: repeating-linear-gradient(
+        90deg, var(--amber) 0, var(--amber) 4px, var(--amber2) 4px, var(--amber2) 8px
+      );
+      width: 0%; transition: width .18s steps(8);
+    }
+    #progress { font-size: 6px; color: var(--dimtxt); letter-spacing: 1px; line-height: 2; }
+
+    /* ── MAIN ── */
+    #main { display: none; flex-direction: column; gap: 14px; }
+
+    /* ── TOOLBAR — single line ── */
+    #toolbar {
+      display: flex; align-items: center;
+      gap: 10px; flex-wrap: wrap;
+    }
+    #summary { font-size: 6px; color: var(--dimtxt); letter-spacing: 1px; line-height: 1; white-space: nowrap; }
+    #summary b { color: var(--muted); }
+
+    /* ── SEARCH BAR ── */
+    #search-bar { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+    #search-input {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px; letter-spacing: 1px;
+      background: var(--bg2); color: var(--amber);
+      border: 2px solid var(--dim2);
+      padding: 8px 12px; width: 180px; min-width: 0;
+      outline: none; transition: border-color .1s;
+    }
+    #search-input::placeholder { color: var(--dimtxt); }
+    #search-input:focus { border-color: var(--amber2); }
+    #search-msg { font-size: 6px; letter-spacing: 1px; color: var(--dimtxt); white-space: nowrap; }
+    #search-msg.err { color: #b04040; }
+    #search-msg.ok  { color: #6a9a50; }
+
+    .nav-btns { display: flex; gap: 8px; flex-wrap: nowrap; }
+
+    /* ── CAROUSEL ── */
+    #carousel-outer {
+      overflow: hidden; cursor: grab;
+      padding: 16px 0 8px;
+      mask-image: linear-gradient(90deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+      -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 48px, #000 calc(100% - 48px), transparent 100%);
+    }
+    #carousel-outer.grabbing { cursor: grabbing; }
+
+    #carousel-track {
+      display: flex; align-items: flex-start; gap: 0;
+      will-change: transform;
+    }
+
+    /* ── CONNECTOR — height matches full block column (face + label) ── */
+    .h-conn {
+      flex-shrink: 0;
+      width: var(--CONN);
+      /* align-self stretch + calc to match block face centre */
+      align-self: flex-start;
+      height: var(--BLK);
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 0;
+    }
+    .h-conn-inner { display: flex; align-items: center; gap: 0; }
+    .h-dot  { width: 3px; height: 3px; background: var(--amber3); flex-shrink: 0; }
+    .h-gap  { width: 3px; height: 1px; background: transparent;   flex-shrink: 0; }
+
+    /* ── GAP BLOCK — small perfect square, centered on chain line ── */
+    .gap-item {
+      flex-shrink: 0;
+      align-self: flex-start;
+      width:  var(--GAP-SZ);
+      height: var(--GAP-SZ);
+      /* center vertically against the block face which is --BLK tall */
+      margin-top: calc((var(--BLK) - var(--GAP-SZ)) / 2);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      border: 1px solid var(--dim);
+      background: var(--bg);
+    }
+    .gap-dots-row { display: flex; gap: 3px; }
+    .gap-dot      { width: 3px; height: 3px; background: var(--dim2); }
+    .gap-range    { font-size: 4px; color: var(--dimtxt); letter-spacing: .3px; text-align: center; line-height: 1.6; }
+
+    /* ── BITMAP BLOCK — perfect square, flat pixel style ── */
+    .block-item {
+      flex-shrink: 0;
+      width:  var(--BLK);
+      display: flex; flex-direction: column;
+      align-items: center; gap: 5px;
+      cursor: pointer;
+    }
+
+    /* the actual square face */
+    .blk-face {
+      width:  var(--BLK);
+      height: var(--BLK);
+      position: relative;
+      border: 2px solid var(--amber2);
+      background: #1a1008;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color .1s, background .1s;
+      outline: 1px solid rgba(0,0,0,.6);
+      outline-offset: -4px;
+      flex-shrink: 0;
+    }
+
+    /* scanline overlay */
+    .blk-face::before {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,.14) 0px, rgba(0,0,0,.14) 1px,
+        transparent 1px, transparent 4px
+      );
+    }
+
+    /* inner pixel frame */
+    .blk-face::after {
+      content: ''; position: absolute;
+      inset: 3px; pointer-events: none;
+      border: 1px solid rgba(200,135,58,.08);
+    }
+
+    .block-item:hover .blk-face {
+      border-color: var(--amber);
+      background: #221408;
+    }
+    .block-item.active .blk-face {
+      border-color: var(--amber);
+      background: #1e1208;
+      box-shadow: 0 0 0 1px var(--amber2), 3px 3px 0 var(--amber3);
+    }
+
+    /* ── SPECIAL block: bitmap number == block number ── */
+    .block-item.special .blk-face {
+      border-color: #f0a030;
+      background: #1e1200;
+      animation: specialPulse 2s steps(4) infinite;
+    }
+    .block-item.special .blk-face::after {
+      border-color: rgba(255,200,80,.2);
+    }
+    .block-item.special .blk-num  { color: #ffd060; text-shadow: 0 0 8px #f0a030, 1px 1px 0 #3d2000; }
+    .block-item.special .blk-bcount { color: #d4a040; }
+    .block-item.special:hover .blk-face { background: #281800; border-color: #ffc040; }
+    .block-item.special.active .blk-face {
+      background: #241600;
+      box-shadow: 0 0 0 1px #f0a030, 0 0 12px 2px rgba(240,160,48,.25), 3px 3px 0 #3d2000;
+    }
+
+    @keyframes specialPulse {
+      0%,100% { box-shadow: 0 0 0 1px #f0a030, 0 0 8px 1px rgba(240,160,48,.3); }
+      50%      { box-shadow: 0 0 0 1px #ffc040, 0 0 16px 4px rgba(255,192,64,.45); }
+    }
+
+    /* block number — large, inside the square */
+    .blk-num {
+      font-size: 12px; line-height: 1;
+      color: var(--amber);
+      text-shadow: 1px 1px 0 var(--amber3);
+      position: relative; z-index: 1;
+      letter-spacing: 0;
+      transition: color .1s;
+    }
+    .blk-num.sm { font-size: 9px; }
+    .blk-num.xs { font-size: 7px; }
+
+    /* bitmap count — small label BELOW the square */
+    .blk-bcount {
+      font-size: 6px; line-height: 1;
+      color: var(--dimtxt);
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .block-item:hover .blk-bcount  { color: var(--muted); }
+    .block-item.active .blk-bcount { color: var(--txt); }
+
+    /* ── DRAG HINT ── */
+    #drag-hint {
+      font-size: 6px; color: var(--dimtxt); letter-spacing: 2px;
+      display: flex; align-items: center; gap: 10px;
+    }
+
+    /* ── DETAIL PANEL ── */
+    #detail {
+      display: none;
+      border: 2px solid var(--dim);
+      background: var(--bg2);
+      animation: pxSlide .1s steps(3) forwards;
+      max-height: 380px;
+      overflow-y: auto; overflow-x: hidden;
+    }
+    #detail::-webkit-scrollbar { width: 6px; }
+    #detail::-webkit-scrollbar-track { background: var(--bg); }
+    #detail::-webkit-scrollbar-thumb { background: var(--dim2); }
+
+    @keyframes pxSlide {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* sticky header inside detail */
+    #detail-hdr {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--bg2);
+      border-bottom: 2px solid var(--dim);
+      padding: 12px 16px;
+      display: flex; align-items: flex-start;
+      justify-content: space-between; gap: 12px;
+    }
+    #detail-title {
+      font-size: 9px; color: var(--amber);
+      letter-spacing: 1px; line-height: 1.7;
+    }
+    #detail-meta {
+      text-align: right; flex-shrink: 0;
+    }
+    #detail-meta .meta-count {
+      font-size: 7px; color: var(--muted); display: block; margin-bottom: 4px;
+    }
+    #detail-meta .meta-sat {
+      font-size: 5px; color: var(--dimtxt); display: block; line-height: 1.8;
+    }
+
+    /* list body */
+    #detail-body { padding: 12px 16px; }
+
+    /* column headers */
+    .list-head {
+      display: grid;
+      grid-template-columns: 40px 1fr 1fr;
+      gap: 4px;
+      padding: 0 8px 8px;
+      border-bottom: 1px solid var(--dim);
+      margin-bottom: 6px;
+    }
+    .list-head span {
+      font-size: 5px; letter-spacing: 1px;
+      color: var(--dimtxt); text-transform: uppercase;
+    }
+    .list-head span:last-child { text-align: right; }
+
+    /* rows */
+    #detail-list { display: flex; flex-direction: column; gap: 3px; }
+
+    .di {
+      display: grid;
+      grid-template-columns: 40px 1fr 1fr;
+      gap: 4px;
+      align-items: center;
+      padding: 6px 8px;
+      background: var(--bg);
+      border: 1px solid var(--dim);
+      font-size: 7px;
+      text-decoration: none;
+      transition: border-color .08s, background .08s;
+      cursor: pointer;
+    }
+    .di:hover { border-color: var(--amber3); background: var(--bg3); }
+    .di:nth-child(even) { background: var(--bg3); }
+    .di:nth-child(even):hover { background: var(--bg2); }
+
+    .di-idx  { color: var(--dimtxt); font-size: 5px; }
+    .di-bm   { color: var(--amber); }
+    .di-sat  { color: var(--muted); font-size: 6px; text-align: right; letter-spacing: 0; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="logo">BITMAP<br>CHAIN</div>
+    <div class="logo-sub">SAT → BLOCK EXPLORER</div>
+  </header>
+  <div class="px-rule"></div>
+
+  <!-- Loader -->
+  <div id="loader">
+    <div class="prog-track"><div class="prog-fill" id="progBar"></div></div>
+    <div id="progress">INITIALIZING_</div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="toolbar">
+      <div id="summary"></div>
+      <div id="search-bar">
+        <input id="search-input" type="text" placeholder="BLOCK OR BITMAP #..." autocomplete="off" spellcheck="false"/>
+        <button class="px-btn" id="search-btn">[ FIND ]</button>
+        <span id="search-msg"></span>
+      </div>
+      <div class="nav-btns">
+        <button class="px-btn" id="firstBtn">← FIRST</button>
+        <button class="px-btn" id="lastBtn">LAST →</button>
+      </div>
+    </div>
+
+    <div class="px-rule"></div>
+
+    <div id="carousel-outer">
+      <div id="carousel-track"></div>
+    </div>
+
+    <div id="drag-hint">◂◂ DRAG TO EXPLORE ▸▸</div>
+    <div class="px-rule" style="margin-top:6px"></div>
+
+    <div id="detail">
+      <div id="detail-hdr">
+        <span id="detail-title"></span>
+        <div id="detail-meta">
+          <span class="meta-count" id="detail-count"></span>
+          <span class="meta-sat"   id="detail-sat"></span>
+        </div>
+      </div>
+      <div id="detail-body">
+        <div class="list-head">
+          <span>#</span><span>BITMAP</span><span>SAT</span>
+        </div>
+        <div id="detail-list"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+/* ── Ordinal theory ─────────────────────────────────────────────────────── */
+function buildBlockStarts(max) {
+  const s = new Float64Array(max + 2);
+  let sub = 5_000_000_000, sat = 0;
+  for (let b = 0; b <= max; b++) {
+    s[b] = sat; sat += sub;
+    if ((b + 1) % 210_000 === 0) sub = Math.floor(sub / 2);
+  }
+  s[max + 1] = sat; return s;
+}
+function satToBlock(sat, bs) {
+  let lo = 0, hi = bs.length - 2;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; bs[m] <= sat ? lo = m : hi = m - 1; }
+  return lo;
+}
+
+/* ── Sources (11-page indexer, bitmaps 0–941,999) ─────────────────────── */
+const BASE = "https://ordinals.com";
+const SRC = [
+  `${BASE}/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0`, // 0
+  `${BASE}/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0`, // 1
+  `${BASE}/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0`, // 2
+  `${BASE}/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0`, // 3
+  `${BASE}/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0`, // 4
+  `${BASE}/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0`, // 5
+  `${BASE}/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0`, // 6
+  `${BASE}/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0`, // 7
+  `${BASE}/content/bb986a1208380ec7db8df55a01c88c73a581069a51b5a2eb2734b41ba10b65c2i0`, // 8
+  `${BASE}/content/b907b51a239e3a37f29f8222fb274f828c6ebf7b93ce501a55b7171daaa75758i0`, // 9  (840k–906,999) new JSON format
+  `${BASE}/content/b942b6477c7da9090edb9751429ba9c3ba01b39ab972fc888d481f528e3e03c3i0`, // 10 (907k–941,999) new JSON format
+];
+
+// rawPages[p] = flat array of sat values, indexed by (bitmap % page_size)
+// pages 0-8: 100,000 entries each  → bitmaps 0–839,999
+// page 9:    67,000 entries         → bitmaps 840,000–906,999
+// page 10:   35,000 entries         → bitmaps 907,000–941,999
+const rawPages = Array(SRC.length).fill(null);
+
+async function fillPage(idx) {
+  if (idx === 9 || idx === 10) {
+    // New JSON format: { deltaEncodedSats: [...], satIndexMap: {...} }
+    const data = await fetch(SRC[idx]).then(r => r.json());
+    const fs = [];
+    data.deltaEncodedSats.forEach((v, i) =>
+      fs.push(i === 0 ? parseInt(v) : fs[i-1] + parseInt(v))
+    );
+    rawPages[idx] = fs; // already in correct order (not index-remapped)
+  } else {
+    let data = await fetch(SRC[idx]).then(r => r.text());
+    if (idx === 2 || idx === 3) {
+      data = "[" + data + "]";
+      data = JSON.parse(data);
+      data = [data.slice(0, 99999), data.slice(100000, 199999)];
+    } else {
+      try { data = JSON.parse(data.replaceAll("\\n  ", "")); } catch (_) {}
+      try { data = JSON.parse(data.replaceAll("  ", "")); } catch (_) {}
+    }
+    const fs = [];
+    data[0].forEach((v, i) => fs.push(i === 0 ? parseInt(v) : fs[i-1] + parseInt(v)));
+    const filled = Array(100000).fill(0);
+    data[1].forEach((i2, i) => { filled[i2] = fs[i]; });
+    rawPages[idx] = filled;
+  }
+}
+
+/* ── Virtual item list ─────────────────────────────────────────────────── */
+const BATCH   = 30;
+const PRELOAD = 10;
+/* item widths in px */
+const BLK  = 140; // bitmap block (square)
+const GAPSZ = 60; // empty-range pill (smaller square)
+const CONN  = 32; // connector
+
+let items = [], sortedBlocks = [], blockMap = new Map(), blockStarts = null;
+let activeBlock = null, renderedRange = { start: -1, end: -1 };
+
+function buildVirtualItems() {
+  items = [];
+  for (let i = 0; i < sortedBlocks.length; i++) {
+    const bn = sortedBlocks[i], prev = i > 0 ? sortedBlocks[i-1] : null;
+    if (i > 0) {
+      items.push({ type: 'conn' });
+      if (bn - prev > 1) {
+        items.push({ type: 'gap', from: prev+1, to: bn-1 });
+        items.push({ type: 'conn' });
+      }
+    }
+    items.push({ type: 'block', blockNum: bn, idx: i });
+  }
+}
+
+function iw(it) { return it.type === 'block' ? BLK : it.type === 'conn' ? CONN : GAPSZ; }
+function totalWidth() { return items.reduce((s, it) => s + iw(it), 0); }
+
+function blockIdxAtX(scrollX) {
+  let cum = 0, bi = 0;
+  for (const it of items) {
+    const w = iw(it);
+    if (it.type === 'block') { if (cum + w >= scrollX) return bi; bi++; }
+    cum += w;
+    if (cum > scrollX + window.innerWidth * 3) break;
+  }
+  return bi;
+}
+
+function xOfBlockIdx(bi) {
+  let cum = 0, count = 0;
+  for (const it of items) {
+    if (it.type === 'block') { if (count === bi) return cum; count++; }
+    cum += iw(it);
+  }
+  return cum;
+}
+
+/* ── DOM builders ──────────────────────────────────────────────────────── */
+const track = document.getElementById("carousel-track");
+
+function makeConn() {
+  const el = document.createElement("div"); el.className = "h-conn";
+  let h = '<div class="h-conn-inner">';
+  for (let i = 0; i < 5; i++) h += '<div class="h-dot"></div><div class="h-gap"></div>';
+  el.innerHTML = h + '</div>'; return el;
+}
+
+function makeGapEl(from, to) {
+  const count = to - from + 1;
+  const el = document.createElement("div"); el.className = "gap-item";
+  el.innerHTML =
+    `<div class="gap-dots-row">
+       <div class="gap-dot"></div><div class="gap-dot"></div><div class="gap-dot"></div>
+     </div>
+     <div class="gap-range">${from.toLocaleString()}<br>–<br>${to.toLocaleString()}<br>(${count.toLocaleString()})</div>`;
+  return el;
+}
+
+function numClass(n) {
+  const s = n.toString();
+  if (s.length >= 7) return 'xs';
+  if (s.length >= 5) return 'sm';
+  return '';
+}
+
+function makeBlockEl(blockNum, entries) {
+  const el = document.createElement("div"); el.className = "block-item"; el.dataset.block = blockNum;
+  const isSpecial = entries.some(e => e.bitmap === blockNum);
+  if (isSpecial) el.classList.add("special");
+  const nc = numClass(blockNum);
+  el.innerHTML =
+    `<div class="blk-face"><span class="blk-num${nc ? ' '+nc : ''}">${blockNum}</span></div>` +
+    `<span class="blk-bcount">${entries.length}</span>`;
+  el.addEventListener("click", () => { if (!wasDragging) toggleDetail(blockNum, el); });
+  return el;
+}
+
+/* ── Windowed render ─────────────────────────────────────────────────────── */
+function renderWindow(centerBI) {
+  const start = Math.max(0, centerBI - PRELOAD);
+  const end   = Math.min(sortedBlocks.length - 1, centerBI + BATCH + PRELOAD);
+  if (start === renderedRange.start && end === renderedRange.end) return;
+  renderedRange = { start, end };
+
+  track.innerHTML = "";
+
+  /* left spacer */
+  const sx = xOfBlockIdx(start);
+  const sp = document.createElement("div");
+  sp.style.cssText = `flex-shrink:0;width:${sx}px;height:1px;`;
+  track.appendChild(sp);
+
+  let inRange = false;
+  for (const it of items) {
+    if (it.type === 'block') {
+      if (it.idx === start) inRange = true;
+      if (it.idx > end)     { inRange = false; break; }
+    }
+    if (it.type === 'block' && it.idx < start) continue;
+    if (!inRange && it.type !== 'block') continue;
+
+    let el;
+    if      (it.type === 'block') { el = makeBlockEl(it.blockNum, blockMap.get(it.blockNum)); if (it.blockNum === activeBlock) el.classList.add("active"); }
+    else if (it.type === 'conn')  { el = makeConn(); }
+    else                          { el = makeGapEl(it.from, it.to); }
+    track.appendChild(el);
+  }
+
+  /* right spacer */
+  const ex = xOfBlockIdx(end + 1);
+  const ep = document.createElement("div");
+  ep.style.cssText = `flex-shrink:0;width:${totalWidth()-ex}px;height:1px;`;
+  track.appendChild(ep);
+}
+
+/* ── Detail panel ────────────────────────────────────────────────────────── */
+function toggleDetail(blockNum, itemEl) {
+  const det = document.getElementById("detail");
+  if (activeBlock === blockNum) {
+    activeBlock = null;
+    document.querySelectorAll(".block-item.active").forEach(e => e.classList.remove("active"));
+    det.style.display = "none";
+    return;
+  }
+  document.querySelectorAll(".block-item.active").forEach(e => e.classList.remove("active"));
+  itemEl.classList.add("active");
+  activeBlock = blockNum;
+
+  const entries = blockMap.get(blockNum);
+  const s0 = blockStarts[blockNum], s1 = blockStarts[blockNum + 1] - 1;
+
+  document.getElementById("detail-title").textContent  = `BLOCK ${blockNum.toLocaleString()}`;
+  document.getElementById("detail-count").textContent  = `${entries.length} BITMAP${entries.length !== 1 ? "S" : ""}`;
+  document.getElementById("detail-sat").textContent    =
+    `SAT RANGE\n${s0.toLocaleString()} – ${s1.toLocaleString()}`;
+
+  document.getElementById("detail-list").innerHTML = entries.map(({ bitmap, sat }, i) =>
+    `<a class="di" href="https://ordinals.com/sat/${sat}" target="_blank" rel="noopener">
+       <span class="di-idx">${(i + 1).toString().padStart(3, '0')}</span>
+       <span class="di-bm">${bitmap}</span>
+       <span class="di-sat">${sat}</span>
+     </a>`
+  ).join("");
+
+  det.style.display = "block";
+  det.scrollTop = 0;
+}
+
+/* ── Drag + momentum ─────────────────────────────────────────────────────── */
+const outer = document.getElementById("carousel-outer");
+let isDragging = false, wasDragging = false;
+let startX = 0, trackX = 0, velX = 0, lastCX = 0, lastT = 0, rafId = null;
+
+function getMinX() { return -(totalWidth() - outer.clientWidth); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function applyX(x) {
+  trackX = clamp(x, Math.min(getMinX(), 0), 0);
+  track.style.transform = `translateX(${trackX}px)`;
+  renderWindow(blockIdxAtX(-trackX));
+}
+
+function onDown(e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  isDragging = true; wasDragging = false;
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  startX = cx - trackX; lastCX = cx; lastT = Date.now(); velX = 0;
+  cancelAnimationFrame(rafId);
+  outer.classList.add("grabbing");
+}
+function onMove(e) {
+  if (!isDragging) return;
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const dt = Math.max(1, Date.now() - lastT);
+  velX = (cx - lastCX) / dt * 16;
+  lastCX = cx; lastT = Date.now();
+  if (Math.abs(cx - startX - trackX) > 5) wasDragging = true;
+  applyX(cx - startX);
+}
+function onUp() {
+  if (!isDragging) return;
+  isDragging = false; outer.classList.remove("grabbing");
+  (function momentum() {
+    velX *= 0.91;
+    if (Math.abs(velX) < 0.4) return;
+    const nx = trackX + velX, mn = getMinX();
+    if (nx > 0 || nx < mn) { velX *= -0.25; applyX(nx < mn ? mn : 0); return; }
+    applyX(nx);
+    rafId = requestAnimationFrame(momentum);
+  })();
+}
+
+outer.addEventListener("mousedown",  onDown);
+outer.addEventListener("touchstart", onDown, { passive: true });
+window.addEventListener("mousemove",  onMove);
+window.addEventListener("touchmove",  onMove, { passive: true });
+window.addEventListener("mouseup",    onUp);
+window.addEventListener("touchend",   onUp);
+outer.addEventListener("contextmenu", e => e.preventDefault());
+
+/* ── Nav buttons ─────────────────────────────────────────────────────────── */
+document.getElementById("firstBtn").addEventListener("click", () => {
+  cancelAnimationFrame(rafId); velX = 0; applyX(0);
+});
+document.getElementById("lastBtn").addEventListener("click", () => {
+  cancelAnimationFrame(rafId); velX = 0; applyX(getMinX());
+});
+
+/* ── Search ──────────────────────────────────────────────────────────────── */
+function scrollToBlockIdx(bi) {
+  // centre the found block in the viewport
+  const blockX = xOfBlockIdx(bi);
+  const centred = blockX - outer.clientWidth / 2 + BLK / 2;
+  cancelAnimationFrame(rafId); velX = 0;
+  applyX(-centred);
+}
+
+function doSearch() {
+  const msg  = document.getElementById("search-msg");
+  const raw  = document.getElementById("search-input").value.trim();
+  if (!raw) { msg.className = ''; msg.textContent = ''; return; }
+
+  const n = parseInt(raw, 10);
+  if (isNaN(n) || n < 0) {
+    msg.className = 'err'; msg.textContent = 'ENTER A VALID NUMBER'; return;
+  }
+
+  // 1. Direct block search — is n one of our blocks?
+  const blockIdx = sortedBlocks.indexOf(n);
+  if (blockIdx !== -1) {
+    msg.className = 'ok'; msg.textContent = `BLOCK ${n.toLocaleString()} FOUND`;
+    scrollToBlockIdx(blockIdx);
+    selectBlockAfterScroll(n);
+    return;
+  }
+
+  // 2. Bitmap search — find which block contains bitmap n
+  for (let bi = 0; bi < sortedBlocks.length; bi++) {
+    const entries = blockMap.get(sortedBlocks[bi]);
+    if (entries.some(e => e.bitmap === n)) {
+      const bn = sortedBlocks[bi];
+      msg.className = 'ok'; msg.textContent = `BITMAP ${n.toLocaleString()} → BLOCK ${bn.toLocaleString()}`;
+      scrollToBlockIdx(bi);
+      selectBlockAfterScroll(bn);
+      return;
+    }
+  }
+
+  msg.className = 'err'; msg.textContent = 'NOT FOUND';
+}
+
+function selectBlockAfterScroll(blockNum) {
+  // Wait a frame for renderWindow to create the DOM element, then select it
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const el = track.querySelector(`.block-item[data-block="${blockNum}"]`);
+      if (el) toggleDetail(blockNum, el);
+    });
+  });
+}
+
+document.getElementById("search-btn").addEventListener("click", doSearch);
+document.getElementById("search-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+
+/* ── Load & compute (auto on page load) ────────────────────────────────── */
+(async () => {
+  const prog = document.getElementById("progress");
+  const bar  = document.getElementById("progBar");
+  function sp(pct, msg) { bar.style.width = pct + "%"; prog.textContent = msg + "_"; }
+
+  for (let p = 0; p < SRC.length; p++) {
+    sp(Math.round((p / SRC.length) * 50), `LOADING ${p+1}/${SRC.length}`);
+    if (!rawPages[p]) await fillPage(p);
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  sp(52, "FLATTENING");
+  await new Promise(r => setTimeout(r, 0));
+
+  // Total bitmaps: pages 0-8 → 100k each = 900k, page 9 → 67k, page 10 → 35k = 942k total
+  // Page 9 covers bitmaps 840,000–906,999 (67,000 entries)
+  // Page 10 covers bitmaps 907,000–941,999 (35,000 entries)
+  const PAGE_RANGES = [
+    { start: 0,       size: 100000 }, // 0
+    { start: 100000,  size: 100000 }, // 1
+    { start: 200000,  size: 100000 }, // 2
+    { start: 300000,  size: 100000 }, // 3
+    { start: 400000,  size: 100000 }, // 4
+    { start: 500000,  size: 100000 }, // 5
+    { start: 600000,  size: 100000 }, // 6
+    { start: 700000,  size: 100000 }, // 7
+    { start: 800000,  size: 40000  }, // 8 (800k–839,999)
+    { start: 840000,  size: 67000  }, // 9 (840k–906,999)
+    { start: 907000,  size: 35000  }, // 10 (907k–941,999)
+  ];
+
+  const N = 942_000;
+  const sats = new Float64Array(N);
+
+  for (let p = 0; p < SRC.length; p++) {
+    const { start, size } = PAGE_RANGES[p];
+    const arr = rawPages[p];
+    for (let i = 0; i < size; i++) sats[start + i] = arr[i] || 0;
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  sp(62, "BLOCK TABLE");
+  await new Promise(r => setTimeout(r, 0));
+  blockStarts = buildBlockStarts(900_000);
+
+  sp(65, "GROUPING");
+  await new Promise(r => setTimeout(r, 0));
+  blockMap = new Map();
+  let nonZero = 0;
+  for (let bm = 0; bm < N; bm++) {
+    const sat = sats[bm];
+    if (sat === 0) continue;
+    nonZero++;
+    const bl = satToBlock(sat, blockStarts);
+    if (!blockMap.has(bl)) blockMap.set(bl, []);
+    blockMap.get(bl).push({ bitmap: bm, sat });
+    if (bm % 150_000 === 0) {
+      sp(65 + Math.round((bm / N) * 25), `GROUPING ${Math.round(bm/N*100)}%`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  sp(92, "SORTING");
+  await new Promise(r => setTimeout(r, 0));
+  sortedBlocks = Array.from(blockMap.keys()).sort((a, b) => a - b);
+  for (const [, arr] of blockMap) arr.sort((a, b) => a.sat - b.sat);
+
+  sp(100, "DONE");
+  buildVirtualItems();
+
+  const first = sortedBlocks[0], last = sortedBlocks.at(-1);
+  document.getElementById("summary").innerHTML =
+    `<b>${nonZero.toLocaleString()}</b> BITMAPS &nbsp;·&nbsp; ` +
+    `<b>${sortedBlocks.length.toLocaleString()}</b> BLOCKS &nbsp;·&nbsp; ` +
+    `<b>${first.toLocaleString()}</b> → <b>${last.toLocaleString()}</b>`;
+
+  document.getElementById("loader").style.display = "none";
+  document.getElementById("main").style.display = "flex";
+  track.style.width = totalWidth() + "px";
+  applyX(0);
+})();
+</script>
+</body>
+</html>
