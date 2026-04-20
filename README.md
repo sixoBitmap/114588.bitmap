@@ -17,3 +17,5 @@ Welcome at 114588 Portal
 [Live-chat](https://sixobitmap.github.io/114588.bitmap/live-chat.html) [Live-chat-with-server](https://sixobitmap.github.io/114588.bitmap/live-chat-with-server.html)
 
 [Ascii Stream](https://sixobitmap.github.io/114588.bitmap/bitmap-oasis-ascii-stream.html) 
+
+[Bitmap Chain](https://sixobitmap.github.io/114588.bitmap/bitmap-chain.html) 
