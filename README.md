@@ -19,3 +19,5 @@ Welcome at 114588 Portal
 [Ascii Stream](https://sixobitmap.github.io/114588.bitmap/bitmap-oasis-ascii-stream.html) 
 
 [Bitmap Chain](https://sixobitmap.github.io/114588.bitmap/bitmap-chain.html) 
+
+[Bitmap hotel](https://sixobitmap.github.io/114588.bitmap/bitmap-hotel.html) 
