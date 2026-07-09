@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>bitmap profile · live</title>
+<style>
+  /* ── registry / provenance aesthetic ──────────────────────────────────
+     dark media-forward chrome (content is the hero), mono for every piece
+     of identity data (ids, numbers, sats, counts) because those ARE the
+     identity. aqua = tappable/verified · coral = batch only. ───────────── */
+  :root{
+    --ink:#0b0d11; --surface:#14171d; --surface2:#1b1f27; --line:#242a34;
+    --text:#e7e5df; --mute:#767c87; --dim:#4b515c;
+    --aqua:#35d3c2; --aqua-dim:#1c6f68; --coral:#ff7a5c;
+    --sheet:#eceae4; --sheet-ink:#191c22; --sheet-mute:#6b7079; --sheet-line:#d6d3ca;
+    --safe: env(safe-area-inset-bottom, 0px);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; background:#000; overflow:hidden;
+    font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    color:var(--text); -webkit-font-smoothing:antialiased; }
+  .sans{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button{ font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+
+  /* phone frame on desktop, full on mobile */
+  #phone{ position:relative; width:100%; max-width:440px; height:100%; margin:0 auto;
+    background:var(--ink); overflow:hidden; }
+  @media (min-width:520px){
+    body{ display:flex; align-items:center; justify-content:center;
+      background:radial-gradient(120% 80% at 50% 0%, #14171d, #050608 70%); }
+    #phone{ height:min(940px, 96vh); border-radius:26px;
+      box-shadow:0 30px 90px rgba(0,0,0,.6), 0 0 0 1px var(--line); }
+  }
+
+  /* ── real on-chain content (img / iframe / video / text) ── */
+  .fillmedia{ width:100%; height:100%; display:block; border:0; object-fit:cover;
+    background:var(--ink); }
+  iframe.fillmedia{ pointer-events:none; overflow:hidden; }
+  img.pix{ image-rendering:pixelated; }
+  .textcard{ display:flex; align-items:center; justify-content:center; text-align:center;
+    padding:8%; color:var(--text); background:var(--surface);
+    font-size:9px; line-height:1.55; word-break:break-word; white-space:pre-wrap;
+    overflow:hidden; }
+  .textcard.big{ font-size:clamp(15px,4.6vw,22px); padding:14%;
+    background:radial-gradient(120% 100% at 50% 32%, #1b1f27, #0b0d11); }
+  .textcard.ph{ background:var(--surface2); color:var(--dim);
+    animation:phpulse 1.2s ease-in-out infinite; }
+  @keyframes phpulse{ 0%,100%{ opacity:.55; } 50%{ opacity:1; } }
+  @media (prefers-reduced-motion:reduce){ .textcard.ph{ animation:none; } }
+  .thumb{ position:absolute; left:0; top:0; right:0; bottom:0; overflow:hidden; }
+
+  /* ── start screen ── */
+  #start{ position:absolute; inset:0; z-index:60; background:var(--ink);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:16px; padding:32px; text-align:center; transition:opacity .35s; }
+  #start.gone{ opacity:0; pointer-events:none; }
+  #start .mark{ font-size:12px; letter-spacing:.34em; color:var(--aqua);
+    text-transform:uppercase; }
+  #start h1{ margin:0; font-size:27px; font-weight:600; letter-spacing:-.01em; }
+  #start h1 b{ color:var(--aqua); font-weight:600; }
+  #start p{ margin:0; font-size:12.5px; color:var(--mute); line-height:1.7; max-width:300px; }
+  #start .field{ display:flex; gap:8px; width:100%; max-width:340px; margin-top:6px; }
+  #start input{ flex:1; background:var(--surface); border:1px solid var(--line);
+    color:var(--text); border-radius:10px; padding:13px 14px; font:inherit; font-size:13px;
+    outline:none; text-align:center; min-width:0; }
+  #start input:focus{ border-color:var(--aqua-dim); }
+  #start .go{ background:var(--aqua); color:#04211e; font-weight:600; border-radius:10px;
+    padding:0 18px; font-size:14px; }
+  #start .go:active{ transform:scale(.97); }
+  #start .go:disabled{ opacity:.5; }
+  #start .modes{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin-top:4px; }
+  #start .mode{ font-size:11px; color:var(--mute); border:1px solid var(--line);
+    border-radius:999px; padding:6px 12px; letter-spacing:.02em; }
+  #start .mode.on{ color:var(--aqua); border-color:var(--aqua-dim);
+    background:rgba(53,211,194,.08); }
+  #start .mode:active{ transform:scale(.97); }
+  #start .examples{ font-size:11px; color:var(--dim); margin-top:2px; }
+  #start .examples span{ color:var(--mute); cursor:pointer; text-decoration:underline;
+    text-underline-offset:2px; }
+  #start .err{ font-size:11.5px; color:var(--coral); min-height:15px; max-width:320px; }
+
+  /* ── profile ── */
+  #profile{ position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; }
+  .media{ position:absolute; inset:0; }
+  .media::after{ content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg, rgba(11,13,17,.55) 0%, rgba(11,13,17,0) 22%,
+      rgba(11,13,17,0) 40%, rgba(11,13,17,.82) 100%); }
+
+  /* top bar */
+  .topbar{ position:relative; z-index:3; display:flex; align-items:center;
+    justify-content:space-between; padding:14px 14px 0; gap:10px; }
+  .iconbtn{ width:38px; height:38px; border-radius:11px; background:rgba(10,12,16,.5);
+    backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center;
+    font-size:17px; border:1px solid rgba(255,255,255,.06); }
+  .iconbtn:active{ background:rgba(10,12,16,.8); }
+  .verchip{ font-size:11px; color:var(--text); background:rgba(10,12,16,.5);
+    backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.06); border-radius:999px;
+    padding:7px 11px; display:flex; align-items:center; gap:8px; }
+  .verchip .dots{ display:flex; gap:4px; }
+  .verchip .dot{ width:5px; height:5px; border-radius:50%; background:var(--dim); }
+  .verchip .dot.on{ background:var(--aqua); }
+  .verchip.hidden{ display:none; }
+  .viewbtn{ font-size:15px; }
+  .viewbtn.hidden{ display:none; }
+
+  /* lineage rail — the signature element */
+  .rail{ position:absolute; left:14px; top:0; bottom:0; z-index:2; width:22px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:7px; pointer-events:none; }
+  .rail .seg{ width:2px; background:var(--dim); border-radius:2px; }
+  .rail .up{ height:16px; opacity:.5; }
+  .rail .node{ width:9px; height:9px; border-radius:50%; background:var(--aqua);
+    box-shadow:0 0 0 4px rgba(53,211,194,.16); flex:0 0 auto; }
+  .rail .ancdot{ width:5px; height:5px; border-radius:50%; background:var(--mute);
+    flex:0 0 auto; }
+  .rail .down{ flex:1; min-height:20px; background:linear-gradient(180deg,var(--dim),transparent); }
+  .rail .desc{ font-size:9px; color:var(--mute); writing-mode:vertical-rl;
+    letter-spacing:.15em; margin-top:4px; }
+
+  /* identity block */
+  .idblock{ position:relative; z-index:3; margin-top:auto; padding:0 18px 8px 46px; }
+  .idblock .name{ font-size:22px; font-weight:600; letter-spacing:-.01em;
+    display:flex; align-items:center; gap:8px; min-width:0; }
+  .idblock .name>span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .idblock .name .type{ font-size:10px; font-weight:600; letter-spacing:.06em;
+    color:var(--aqua); border:1px solid var(--aqua-dim); border-radius:5px;
+    padding:2px 6px; text-transform:uppercase; flex:0 0 auto; }
+  .idblock .meta{ font-size:11.5px; color:var(--mute); margin-top:5px; letter-spacing:.02em;
+    display:flex; flex-wrap:wrap; gap:4px 10px; }
+  .idblock .meta .k{ color:var(--dim); }
+
+  /* stats */
+  .stats{ position:relative; z-index:3; display:grid; grid-template-columns:repeat(3,1fr);
+    gap:1px; margin:12px 14px 0; background:var(--line); border:1px solid var(--line);
+    border-radius:13px; overflow:hidden; }
+  .stat{ background:rgba(11,13,17,.72); backdrop-filter:blur(6px); padding:12px 8px;
+    text-align:center; }
+  .stat:active{ background:rgba(27,31,39,.9); }
+  .stat .num{ font-size:19px; font-weight:600; letter-spacing:-.01em; }
+  .stat .num .plus{ color:var(--aqua); }
+  .stat .lbl{ font-size:10px; color:var(--mute); margin-top:3px; letter-spacing:.08em;
+    text-transform:uppercase; }
+
+  /* tags (parents) */
+  .tags{ position:relative; z-index:3; display:flex; gap:7px; overflow-x:auto;
+    padding:12px 14px 0; scrollbar-width:none; }
+  .tags::-webkit-scrollbar{ display:none; }
+  .tag{ flex:0 0 auto; font-size:11.5px; color:var(--text); background:rgba(11,13,17,.66);
+    backdrop-filter:blur(6px); border:1px solid var(--line); border-radius:999px;
+    padding:7px 12px; display:flex; align-items:center; gap:6px; max-width:220px; }
+  .tag span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag:active{ border-color:var(--aqua-dim); }
+  .tag .at{ color:var(--aqua); }
+  .tag.none{ color:var(--dim); border-style:dashed; }
+
+  /* bottom sheet (posts) */
+  #sheet{ position:absolute; left:0; right:0; bottom:0; z-index:20; height:75%;
+    background:var(--sheet); color:var(--sheet-ink); border-radius:18px 18px 0 0;
+    transform:translateY(calc(100% - 62px - var(--safe)));
+    transition:transform .34s cubic-bezier(.32,.72,0,1);
+    box-shadow:0 -12px 40px rgba(0,0,0,.45); display:flex; flex-direction:column;
+    touch-action:none; }
+  #sheet.open{ transform:translateY(0); }
+  .sheet-head{ padding:10px 16px calc(8px); flex:0 0 auto; }
+  .grabber{ width:38px; height:4px; border-radius:3px; background:var(--sheet-line);
+    margin:0 auto 10px; }
+  .sheet-title{ display:flex; align-items:baseline; justify-content:space-between; }
+  .sheet-title .t{ font-size:13px; font-weight:600; letter-spacing:.02em;
+    text-transform:uppercase; color:var(--sheet-ink); }
+  .sheet-title .c{ font-size:12px; color:var(--sheet-mute); }
+  .grid{ flex:1; overflow-y:auto; padding:12px 12px calc(20px + var(--safe));
+    display:grid; grid-template-columns:repeat(3,1fr); gap:6px; align-content:start;
+    -webkit-overflow-scrolling:touch; }
+  /* τετράγωνα tiles με height:0 + padding-top:100% (όχι aspect-ratio):
+     το aspect-ratio άφηνε τα grid rows πιο κοντά από τα κελιά και τα κελιά
+     επικαλύπτονταν· το padding δίνει ΟΡΙΣΜΕΝΟ ύψος που μετράει στο row sizing */
+  .cell{ position:relative; height:0; padding-top:100%; border-radius:9px;
+    overflow:hidden; background:#10131a; }
+  .cell .textcard{ color:#b9bec8; }
+  .cell .idxchip{ position:absolute; right:5px; top:5px; font-size:10px; color:#fff;
+    background:rgba(20,10,6,.72); border-radius:6px; padding:2px 6px; font-weight:600;
+    z-index:2; }
+  .cell:active{ opacity:.85; }
+  .cell .plays{ position:absolute; right:6px; bottom:6px; font-size:10px; color:#fff;
+    background:rgba(0,0,0,.5); border-radius:6px; padding:2px 6px; letter-spacing:.02em; }
+  .cell .kids{ position:absolute; left:6px; bottom:6px; font-size:10px; color:#fff;
+    background:rgba(0,0,0,.45); border-radius:6px; padding:2px 6px; display:flex; gap:4px;
+    align-items:center; z-index:2; }
+  .cell.more{ background:transparent; border:1px dashed var(--sheet-line);
+    color:var(--sheet-mute); font-size:11px; }
+  .cell.more span{ position:absolute; left:0; top:0; right:0; bottom:0;
+    display:flex; align-items:center; justify-content:center; }
+  /* batch collage tile */
+  .cell.batch{ background:var(--coral); }
+  .cell.batch .stack{ position:absolute; inset:0; }
+  .cell.batch .badge{ position:absolute; right:5px; top:5px; font-size:10px; color:#fff;
+    background:rgba(20,10,6,.72); border-radius:6px; padding:2px 6px; font-weight:600;
+    display:flex; align-items:center; gap:4px; z-index:5; }
+  .grid .empty{ grid-column:1/-1; text-align:center; color:var(--sheet-mute);
+    font-size:12px; padding:40px 0; }
+
+  /* viewer */
+  #viewer{ position:absolute; inset:0; z-index:40; background:var(--ink);
+    display:none; flex-direction:column; touch-action:none; }
+  #viewer.on{ display:flex; }
+  #viewer .vmedia{ position:absolute; inset:0; }
+  #viewer .vmedia::after{ content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg, rgba(11,13,17,.6), rgba(11,13,17,0) 26%,
+      rgba(11,13,17,0) 42%, rgba(11,13,17,.9) 100%); }
+  #viewer .vtop{ position:relative; z-index:3; display:flex; justify-content:space-between;
+    padding:14px; }
+  #viewer .vfoot{ position:relative; z-index:3; margin-top:auto; padding:0 18px 24px; }
+  #viewer .vname{ font-size:18px; font-weight:600; display:flex; gap:8px; align-items:center; }
+  #viewer .vname .type{ font-size:10px; font-weight:600; letter-spacing:.06em;
+    color:var(--aqua); border:1px solid var(--aqua-dim); border-radius:5px;
+    padding:2px 6px; text-transform:uppercase; }
+  #viewer .vmeta{ font-size:11px; color:var(--mute); margin-top:5px; }
+  #viewer .vhint{ margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; }
+  #viewer .vhint span{ font-size:10.5px; color:var(--mute); background:rgba(11,13,17,.6);
+    border:1px solid var(--line); border-radius:999px; padding:5px 10px;
+    display:flex; align-items:center; gap:5px; }
+  #viewer .vhint b{ color:var(--aqua); font-weight:600; }
+  .enterpulse{ position:absolute; left:50%; top:50%; z-index:2; width:74px; height:74px;
+    margin:-37px 0 0 -37px; border-radius:50%; border:1.5px solid rgba(53,211,194,.5);
+    display:flex; align-items:center; justify-content:center; color:var(--aqua);
+    font-size:11px; text-align:center; line-height:1.3; pointer-events:none;
+    animation:breathe 2.6s ease-in-out infinite; }
+  @keyframes breathe{ 0%,100%{ transform:scale(.92); opacity:.5;} 50%{ transform:scale(1.06); opacity:.9;} }
+  @media (prefers-reduced-motion:reduce){ .enterpulse{ animation:none; } }
+
+  /* batch open overlay */
+  #batch{ position:absolute; inset:0; z-index:50; background:var(--sheet);
+    color:var(--sheet-ink); display:none; flex-direction:column; }
+  #batch.on{ display:flex; }
+  #batch .bhead{ display:flex; align-items:center; gap:12px; padding:16px 16px 10px; }
+  #batch .bhead .bt{ font-size:14px; font-weight:600; }
+  #batch .bhead .bt small{ display:block; font-size:11px; color:var(--sheet-mute);
+    font-weight:400; margin-top:2px; }
+  #batch .biconbtn{ width:34px; height:34px; border-radius:10px; background:var(--sheet-line);
+    display:flex; align-items:center; justify-content:center; font-size:16px; color:var(--sheet-ink); }
+  #batch .bgrid{ flex:1; overflow-y:auto; padding:8px 12px calc(20px + var(--safe));
+    display:grid; grid-template-columns:repeat(3,1fr); gap:6px; align-content:start;
+    -webkit-overflow-scrolling:touch; }
+
+  /* generic slide-up panel (followers / following / info) */
+  #panel{ position:absolute; left:0; right:0; bottom:0; z-index:55; max-height:82%;
+    background:var(--sheet); color:var(--sheet-ink); border-radius:18px 18px 0 0;
+    transform:translateY(100%); transition:transform .3s cubic-bezier(.32,.72,0,1);
+    display:flex; flex-direction:column; box-shadow:0 -12px 40px rgba(0,0,0,.5); }
+  #panel.on{ transform:translateY(0); }
+  #panel .phead{ padding:14px 16px 8px; display:flex; align-items:center;
+    justify-content:space-between; flex:0 0 auto; }
+  #panel .phead .pt{ font-size:13px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.03em; }
+  #panel .pbody{ overflow-y:auto; padding:4px 16px calc(20px + var(--safe)); }
+  #panel .row{ display:flex; align-items:center; gap:11px; padding:10px 0;
+    border-bottom:1px solid var(--sheet-line); cursor:pointer; }
+  #panel .row:last-child{ border-bottom:none; }
+  #panel .row .av{ width:38px; height:38px; border-radius:9px; overflow:hidden;
+    flex:0 0 auto; background:#10131a; position:relative; }
+  #panel .row .av .textcard{ font-size:4.5px; padding:2px; }
+  #panel .row .info{ min-width:0; flex:1; }
+  #panel .row .info .n{ font-size:13px; font-weight:600; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  #panel .row .info .s{ font-size:11px; color:var(--sheet-mute); overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  #panel .row .depth{ font-size:10px; color:var(--sheet-mute); flex:0 0 auto; }
+  #panel .loadall{ width:100%; margin-top:8px; padding:12px; border-radius:11px;
+    background:var(--sheet-ink); color:var(--sheet); font-size:12.5px; font-weight:600;
+    letter-spacing:.02em; }
+  #panel .loadall:disabled{ opacity:.5; }
+  #panel .kv{ display:flex; justify-content:space-between; padding:11px 0;
+    border-bottom:1px solid var(--sheet-line); font-size:12.5px; gap:12px; }
+  #panel .kv:last-child{ border-bottom:none; }
+  #panel .kv .k{ color:var(--sheet-mute); flex:0 0 auto; }
+  #panel .kv .v{ font-weight:600; max-width:62%; text-align:right; word-break:break-all; }
+  #panel .counting{ font-size:12px; color:var(--sheet-mute); text-align:center; padding:14px; }
+  #panel .counting b{ color:var(--sheet-ink); }
+
+  .scrim{ position:absolute; inset:0; z-index:52; background:rgba(4,5,7,.5);
+    opacity:0; pointer-events:none; transition:opacity .3s; }
+  .scrim.on{ opacity:1; pointer-events:auto; }
+
+  .spin{ display:inline-block; width:13px; height:13px; border:2px solid currentColor;
+    border-right-color:transparent; border-radius:50%; animation:sp .7s linear infinite;
+    vertical-align:-2px; }
+  @keyframes sp{ to{ transform:rotate(360deg); } }
+  .navhint{ position:relative; z-index:3; display:flex; gap:6px; justify-content:center;
+    padding:8px 14px 0; flex-wrap:wrap; }
+  .navhint span{ font-size:10px; color:var(--mute); background:rgba(11,13,17,.55);
+    border:1px solid var(--line); border-radius:999px; padding:4px 9px; display:flex; gap:5px;
+    align-items:center; }
+  .navhint b{ color:var(--aqua); font-weight:600; }
+  .navhint.empty{ display:none; }
+  #loader{ position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:70;
+    font-size:11px; color:var(--aqua); opacity:0; transition:opacity .2s;
+    background:rgba(11,13,17,.8); padding:6px 12px; border-radius:999px; pointer-events:none; }
+  #loader.on{ opacity:1; }
+  #toast{ position:absolute; bottom:84px; left:50%; transform:translateX(-50%); z-index:71;
+    font-size:11.5px; color:var(--coral); opacity:0; transition:opacity .25s;
+    background:rgba(11,13,17,.92); border:1px solid var(--line); padding:8px 14px;
+    border-radius:999px; pointer-events:none; max-width:86%; text-align:center; }
+  #toast.on{ opacity:1; }
+</style>
+</head>
+<body>
+<div id="phone">
+
+  <!-- start -->
+  <div id="start">
+    <div class="mark">on-chain profiles</div>
+    <h1 class="sans">bitmap <b>profile</b></h1>
+    <p class="sans">Κάθε inscription είναι ένα προφίλ. Τα children του είναι τα posts, οι parents τα tags, τα reinscriptions οι εκδοχές του. Ζωντανά δεδομένα από το ordinals.com.</p>
+    <div class="modes" id="modes">
+      <button class="mode on" data-m="bitmap">bitmap</button>
+      <button class="mode" data-m="id">inscription id</button>
+      <button class="mode" data-m="sat">sat</button>
+      <button class="mode" data-m="number">#number</button>
+    </div>
+    <div class="field">
+      <input id="bm" autocomplete="off" spellcheck="false" placeholder="αριθμός bitmap · π.χ. 866266" />
+      <button class="go" id="enter">→</button>
+    </div>
+    <div class="err" id="startErr"></div>
+    <div class="examples sans" id="exRow"></div>
+  </div>
+
+  <!-- profile -->
+  <div id="profile" style="display:none">
+    <div class="media" id="pmedia"></div>
+    <div class="rail" id="rail"></div>
+    <div class="topbar">
+      <button class="iconbtn" id="back">‹</button>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="iconbtn" id="pinfo" title="metadata">⋯</button>
+        <button class="iconbtn viewbtn hidden" id="viewChildren" title="δες τα children σε feed">▤</button>
+        <div class="verchip hidden" id="verchip">
+          <span id="verlabel">v1</span><span class="dots" id="verdots"></span>
+        </div>
+      </div>
+    </div>
+    <div class="idblock">
+      <div class="name" id="pname"></div>
+      <div class="meta" id="pmeta"></div>
+    </div>
+    <div class="stats">
+      <button class="stat" id="statFollowing"><div class="num" id="nFollowing">–</div><div class="lbl">following</div></button>
+      <button class="stat" id="statFollowers"><div class="num" id="nFollowers">–</div><div class="lbl">followers</div></button>
+      <button class="stat" id="statPosts"><div class="num" id="nPosts">–</div><div class="lbl">posts</div></button>
+    </div>
+    <div class="tags" id="ptags"></div>
+    <div style="flex:1"></div>
+    <div class="navhint" id="navhint"></div>
+  </div>
+
+  <!-- bottom sheet: posts -->
+  <div id="sheet">
+    <div class="sheet-head" id="sheetHead">
+      <div class="grabber"></div>
+      <div class="sheet-title"><span class="t">posts</span><span class="c" id="postCount"></span></div>
+    </div>
+    <div class="grid" id="postGrid"></div>
+  </div>
+
+  <!-- viewer -->
+  <div id="viewer">
+    <div class="vmedia" id="vmedia"></div>
+    <div class="enterpulse" id="enterPulse" style="display:none">tap<br>προφίλ</div>
+    <div class="vtop">
+      <button class="iconbtn" id="vback">‹</button>
+      <button class="iconbtn" id="vinfo">⋯</button>
+    </div>
+    <div class="vfoot">
+      <div class="vname" id="vname"></div>
+      <div class="vmeta" id="vmeta"></div>
+      <div class="vhint">
+        <span><b>↑↓</b> επόμενο child</span><span><b>←→</b> εκδοχές</span><span><b>tap</b> άνοιξε προφίλ</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- batch collage open -->
+  <div id="batch">
+    <div class="bhead">
+      <button class="biconbtn" id="batchBack">‹</button>
+      <div class="bt">collage<small id="batchSub"></small></div>
+    </div>
+    <div class="bgrid" id="batchGrid"></div>
+  </div>
+
+  <!-- slide-up panel (followers/following/info) -->
+  <div class="scrim" id="scrim"></div>
+  <div id="panel">
+    <div class="phead"><span class="pt" id="panelTitle"></span><button class="iconbtn" id="panelClose" style="background:var(--sheet-line);color:var(--sheet-ink)">✕</button></div>
+    <div class="pbody" id="panelBody"></div>
+  </div>
+
+  <div id="loader"><span class="spin"></span> φόρτωση</div>
+  <div id="toast"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   BITMAP PROFILE · LIVE — inscriptions ως κοινωνικά προφίλ,
+   με πραγματικά δεδομένα από τα recursive endpoints του ordinals.com:
+     profile image → /content/<id>
+     profile info  → /r/inscription/<id>
+     posts         → /r/children/<id>/<page>
+     followers     → απόγονοι (ρηχό: άμεσα children, «φόρτωσε-όλα» = BFS)
+     following/tags→ /r/parents/<id>/<page>
+     εκδοχές       → /r/sat/<sat>/<page>   (reinscriptions στο ίδιο sat)
+   Αναζήτηση με αριθμό inscription: fetch της HTML σελίδας /inscription/<n>
+   (έχει CORS) και εξαγωγή του id — το JSON API του ordinals.com είναι off.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- utils ---------- */
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const shortId = id => id.slice(0,4)+'…'+id.slice(-5);
+const txidOf = id => id.replace(/i\d+$/,'');
+const fmt = n => n>=1000 ? (n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+'k' : ''+n;
+const fmtBytes = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : b>=1024 ? (b/1024).toFixed(1)+' KB' : b+' B';
+const dateFmt = ts => { try{ return new Date(ts*1000).toISOString().replace('T',' ').slice(0,16)+' UTC'; }catch{ return '—'; } };
+const el = (tag,cls) => { const n=document.createElement(tag); if(cls) n.className=cls; return n; };
+
+/* ---------- ordinals.com data layer (real recursive endpoints) ---------- */
+const API = 'https://ordinals.com';
+
+// μικρός concurrency limiter — ευγένεια προς το ordinals.com
+function limiter(max){
+  let act=0; const q=[];
+  const next=()=>{ if(act>=max || !q.length) return; act++; const {fn,res,rej}=q.shift();
+    fn().then(res,rej).finally(()=>{ act--; next(); }); };
+  return fn => new Promise((res,rej)=>{ q.push({fn,res,rej}); next(); });
+}
+const lim = limiter(6);
+
+const cache = { json:new Map(), text:new Map(), count:new Map(), name:new Map(), etype:new Map() };
+
+// dedupe: κρατάμε promises στη cache· σε αποτυχία τις πετάμε για retry
+function cachedJSON(path){
+  if(cache.json.has(path)) return cache.json.get(path);
+  const p = lim(async()=>{
+    const r = await fetch(API+path);
+    if(!r.ok) throw new Error('HTTP '+r.status+' '+path);
+    return r.json();
+  });
+  cache.json.set(path,p);
+  p.catch(()=>cache.json.delete(path));
+  return p;
+}
+
+const ord = {
+  live: true,
+  contentURL: id => API+'/content/'+id,
+  previewURL: id => API+'/preview/'+id,
+  inscription(id){ return cachedJSON('/r/inscription/'+id); },
+  async children(id,page=0){ const r=await cachedJSON(`/r/children/${id}/${page}`);
+    return { ids:r.ids||[], more:!!r.more }; },
+  async parents(id,page=0){ const r=await cachedJSON(`/r/parents/${id}/${page}`);
+    return { ids:r.ids||[], more:!!r.more }; },
+  async sat(s,page=0){ const r=await cachedJSON(`/r/sat/${s}/${page}`);
+    return { ids:r.ids||[], more:!!r.more }; },
+  satAt(s,idx=0){ return cachedJSON(`/r/sat/${s}/at/${idx}`); },
+  async childCount(id){
+    if(cache.count.has(id)) return cache.count.get(id);
+    const r = await this.children(id,0);
+    const v = { n:r.ids.length, more:r.more };
+    cache.count.set(id,v); return v;
+  },
+  async text(id,maxLen=2000){
+    const k=id+'/'+maxLen;
+    if(cache.text.has(k)) return cache.text.get(k);
+    const p = lim(async()=>{
+      const r = await fetch(this.contentURL(id));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return (await r.text()).slice(0,maxLen);
+    });
+    cache.text.set(k,p); p.catch(()=>cache.text.delete(k));
+    return p;
+  },
+  // αριθμός inscription → id: parse της HTML σελίδας (το JSON API είναι κλειστό)
+  async byNumber(n){
+    const r = await lim(()=>fetch(API+'/inscription/'+n));
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const html = await r.text();
+    const m = html.match(/\/(?:content|preview)\/([0-9a-f]{64}i\d+)/);
+    if(!m) throw new Error('no id in page');
+    return m[1];
+  },
+};
+
+/* ============ ON-CHAIN BITMAP INDEX (bitmap number -> inscription id) ============
+   ΑΥΤΟΥΣΙΟΣ ο sat index από το bitmap labyrinth: 9 on-chain σελίδες
+   (καλύπτουν bitmaps 0-899.999), delta-encoded sats + θέσεις ανά 100k, και το id
+   βγαίνει από το /r/sat/<sat>/at/0 (το bitmap είναι το 1ο inscription του sat). */
+const bitmapIndexPages = Array(9).fill(null);
+const BITMAP_INDEX_URLS = [
+  '/content/01bba6c58af39d7f199aa2bceeaaba1ba91b23d2663bc4ef079a4b5e442dbf74i0',
+  '/content/bb01dfa977a5cd0ee6e900f1d1f896b5ec4b1e3c7b18f09c952f25af6591809fi0',
+  '/content/bb02e94f3062facf6aa2e47eeed348d017fd31c97614170dddb58fc59da304efi0',
+  '/content/bb037ec98e6700e8415f95d1f5ca1fe1ba23a3f0c5cb7284d877e9ac418d0d32i0',
+  '/content/bb9438f4345f223c6f4f92adf6db12a82c45d1724019ecd7b6af4fcc3f5786cei0',
+  '/content/bb0542d4606a9e7eb4f31051e91f7696040db06ca1383dff98505618c34d7df7i0',
+  '/content/bb06a4dffba42b6b513ddee452b40a67688562be4a1345127e4d57269e6b2ab6i0',
+  '/content/bb076934c1c22007b315dd1dc0f8c4a2f9d52f348320cfbadc7c0bd99eaa5e18i0',
+  '/content/bb084ed0d70c336861e794c5a2d41a19df8b5531b51ffe71a868695c20cafed2i0',
+];
+
+async function fillIndexPage(page) {
+  let data = await lim(()=>fetch(API + BITMAP_INDEX_URLS[page]).then((r) => r.text()));
+  if (page === 2 || page === 3) {
+    data = '[' + data + ']';
+    data = JSON.parse(data);
+    data = [data.slice(0, 99999), data.slice(100000, 199999)];
+  } else {
+    try { data = JSON.parse(data.replaceAll('\n  ', '')); } catch (e) {}
+    try { data = JSON.parse(data.replaceAll('  ', '')); } catch (e) {}
+  }
+  const fullSats = [];
+  data[0].forEach((sat, i) => {
+    fullSats.push(i === 0 ? parseInt(sat) : parseInt(fullSats[i - 1]) + parseInt(sat));
+  });
+  const filledArray = Array(100000).fill(0);
+  data[1].forEach((index, i) => { filledArray[index] = fullSats[i]; });
+  bitmapIndexPages[page] = filledArray;
+}
+
+async function getBitmapSat(bitmapNumber) {
+  const page = Math.floor(bitmapNumber / 100000);
+  if (page >= BITMAP_INDEX_URLS.length) {
+    throw new Error('ο on-chain index καλύπτει bitmaps 0 – 899.999');
+  }
+  if (!bitmapIndexPages[page]) await fillIndexPage(page);
+  return bitmapIndexPages[page][bitmapNumber % 100000];
+}
+
+async function getBitmapInscriptionId(bitmapNumber) {
+  const sat = await getBitmapSat(bitmapNumber);
+  if (!sat) throw new Error('το bitmap ' + bitmapNumber + ' δεν βρέθηκε στον on-chain index (φτάνει έως ~845.000)');
+  const res = await ord.satAt(sat, 0);
+  if (!res || !res.id) throw new Error('δεν βρέθηκε inscription στο sat ' + sat);
+  return res.id;
+}
+
+// πραγματικός τύπος content — αν υπάρχει delegate, μετράει ο τύπος του delegate
+async function effType(meta){
+  if(!meta) return '';
+  if(!meta.delegate) return meta.content_type||'';
+  if(cache.etype.has(meta.id)) return cache.etype.get(meta.id);
+  let t = meta.content_type||'';
+  try{ const d = await ord.inscription(meta.delegate); t = d.content_type||t; }catch{}
+  cache.etype.set(meta.id,t); return t;
+}
+
+// όνομα προφίλ: για μικρά text inscriptions (π.χ. «867905.bitmap») το ίδιο το content
+async function displayName(id){
+  if(cache.name.has(id)) return cache.name.get(id);
+  let name = shortId(id);
+  try{
+    const m = await ord.inscription(id);
+    const ct = await effType(m);
+    if(/^text\/plain/.test(ct) && m.content_length>0 && m.content_length<=120){
+      const t = (await ord.text(id,160)).trim().split('\n')[0].trim();
+      if(t && t.length<=42 && /^[\x20-\x7eͰ-Ͽ·]+$/.test(t)) name=t;
+    }
+  }catch{}
+  cache.name.set(id,name); return name;
+}
+
+/* ---------- lazy mounting (IntersectionObserver) ---------- */
+const lazyFns = new WeakMap();
+const io = new IntersectionObserver(entries=>{
+  for(const e of entries){
+    if(e.isIntersecting){
+      io.unobserve(e.target);
+      const fn = lazyFns.get(e.target); lazyFns.delete(e.target);
+      if(fn) fn();
+    }
+  }
+},{ rootMargin:'140px' });
+function lazyMount(elm,fn){ lazyFns.set(elm,fn); io.observe(elm); }
+
+/* ---------- real content rendering (dispatch ανά content-type) ---------- */
+async function renderContent(container,id,{big=false}={}){
+  container.innerHTML='';
+  const ph = el('div','fillmedia textcard ph'); ph.textContent='…';
+  container.appendChild(ph);
+  let meta=null, ct='';
+  try{ meta = await ord.inscription(id); ct = await effType(meta); }
+  catch{ ph.textContent='⚠'; ph.classList.remove('ph'); return; }
+  if(!container.contains(ph)) return;   // ο χρήστης προχώρησε — μην πατήσεις νεότερο render
+  const url = ord.contentURL(id);       // για delegates το /content σερβίρει το delegate content
+  const put = n => { if(container.contains(ph)) container.replaceChild(n,ph); };
+
+  if(/^image\/svg|html/.test(ct)){
+    // svg/html συχνά είναι recursive — πρέπει να τρέξουν από το origin του ordinals.com
+    const f=el('iframe','fillmedia'); f.setAttribute('sandbox','allow-scripts');
+    f.setAttribute('scrolling','no'); f.loading='lazy'; f.src=url; put(f);
+  } else if(/^image\//.test(ct)){
+    const im=el('img','fillmedia pix'); im.loading='lazy'; im.decoding='async'; im.alt='';
+    im.onerror=()=>{ const t=el('div','fillmedia textcard'); t.textContent='⚠';
+      if(im.parentNode===container) container.replaceChild(t,im); };
+    im.src=url; put(im);
+  } else if(/^video\//.test(ct)){
+    const v=el('video','fillmedia'); v.muted=true; v.autoplay=true; v.loop=true;
+    v.playsInline=true; v.preload='metadata'; v.src=url; put(v);
+  } else if(/^audio\//.test(ct)){
+    const w=el('div','fillmedia textcard'+(big?' big':'')); w.textContent='♪';
+    if(big){ w.style.position='relative';
+      const a=el('audio'); a.controls=true; a.src=url;
+      a.style.cssText='position:absolute;left:8%;width:84%;bottom:14%;'; w.appendChild(a); }
+    put(w);
+  } else if(/^text\/|json|javascript|xml/.test(ct)){
+    const t=el('div','fillmedia textcard'+(big?' big':''));
+    if(meta.content_length>65536){ t.textContent=fmtBytes(meta.content_length)+' text'; put(t); return; }
+    try{
+      let s = await ord.text(id, big?1600:240);
+      if(/json/.test(ct)){ try{ s=JSON.stringify(JSON.parse(s),null,1).slice(0,big?1600:240); }catch{} }
+      t.textContent = s||'∅';
+    }catch{ t.textContent='⚠'; }
+    if(container.contains(ph)) put(t);
+  } else {
+    const f=el('iframe','fillmedia'); f.setAttribute('sandbox','allow-scripts');
+    f.setAttribute('scrolling','no'); f.loading='lazy'; f.src=ord.previewURL(id); put(f);
+  }
+}
+
+/* ---------- loader + toast ---------- */
+let inflight=0; const loaderEl=$('#loader');
+function tick(d){ inflight=Math.max(0,inflight+d); loaderEl.classList.toggle('on',inflight>0); }
+async function withLoad(p){ tick(1); try{ return await p; } finally{ tick(-1); } }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),2800); }
+
+/* ---------- navigation state ---------- */
+const stack=[];                 // profile id stack (βάθος στο δέντρο)
+let cur=null;                   // τρέχον profile meta
+let curChildren=[];             // φορτωμένα child ids
+let curChildrenMore=false;
+let curParents=[];
+let curVersions=[];             // reinscription ids (ίδιο sat)
+let curVerIndex=0;
+let curAnc={chain:[],more:false};
+let profSibs=null;              // αδέρφια του τρέχοντος προφίλ (αν μπήκα από grid)
+let loadSeq=0;                  // ακυρώνει stale async updates σε γρήγορη πλοήγηση
+
+/* ---------- render profile ---------- */
+async function openProfile(id,{push=true,sibs=null}={}){
+  id=String(id).toLowerCase();
+  let info;
+  try{ info = await withLoad(ord.inscription(id)); }
+  catch(e){ toast('δεν βρέθηκε το inscription'); return false; }
+  const seq=++loadSeq;
+  if(push) stack.push(id);
+  if(sibs) profSibs=sibs; else if(push) profSibs=null;
+  cur=info; curChildren=[]; curChildrenMore=false; curParents=[];
+  curVersions=[]; curVerIndex=0; curAnc={chain:[],more:false};
+
+  $('#profile').style.display='flex';
+  $('#start').classList.add('gone');
+  sheet.classList.remove('open');
+
+  // media — το πραγματικό content
+  renderContent($('#pmedia'), id, {big:true});
+
+  // name + meta
+  const nameEl=$('#pname'); nameEl.innerHTML='';
+  const nspan=el('span'); nspan.textContent=shortId(id); nameEl.appendChild(nspan);
+  const tspan=el('span','type'); tspan.textContent='…'; nameEl.appendChild(tspan);
+  effType(info).then(ct=>{ if(seq===loadSeq)
+    tspan.textContent=(ct||'').split(';')[0].split('/')[1]||'data'; });
+  displayName(id).then(n=>{ if(seq===loadSeq) nspan.textContent=n; });
+  $('#pmeta').innerHTML =
+    `<span><span class="k">#</span>${info.number}</span>`+
+    (info.sat!=null?`<span><span class="k">sat</span> ${info.sat}</span>`:'')+
+    `<span><span class="k">block</span> ${info.height}</span>`;
+
+  // reset τμήματα
+  $('#nPosts').textContent='–'; $('#nFollowers').textContent='–'; $('#nFollowing').textContent='–';
+  $('#verchip').classList.add('hidden'); $('#viewChildren').classList.add('hidden');
+  $('#ptags').innerHTML='<span class="tag none">φόρτωση…</span>';
+  $('#postGrid').innerHTML=''; $('#postCount').textContent='';
+  updateRail(); updateNavhint();
+
+  // ανεξάρτητα τμήματα, παράλληλα — το καθένα ενημερώνει το UI όταν έρθει
+  loadParents(id,seq); loadVersions(info,seq); loadChildren(id,seq); loadAncestors(id,seq);
+  return true;
+}
+
+async function loadParents(id,seq){
+  let res={ids:[],more:false};
+  try{ res = await withLoad(ord.parents(id,0)); }catch{}
+  if(seq!==loadSeq) return;
+  curParents=res.ids;
+  const tg=$('#ptags');
+  if(!res.ids.length){ tg.innerHTML='<span class="tag none">χωρίς parents — ρίζα</span>'; return; }
+  tg.innerHTML='';
+  for(const p of res.ids){
+    const b=el('button','tag');
+    const at=el('span','at'); at.textContent='@'; b.appendChild(at);
+    const s=el('span'); s.textContent=shortId(p); b.appendChild(s);
+    displayName(p).then(n=>{ s.textContent=n; });
+    b.onclick=()=>openProfile(p);
+    tg.appendChild(b);
+  }
+}
+
+async function loadVersions(info,seq){
+  if(info.sat==null) return;
+  let res={ids:[],more:false};
+  try{ res = await withLoad(ord.sat(info.sat,0)); }catch{}
+  if(seq!==loadSeq) return;
+  curVersions=res.ids; curVerIndex=res.ids.indexOf(info.id);
+  const vc=$('#verchip');
+  if(res.ids.length>1 && curVerIndex>=0){
+    vc.classList.remove('hidden');
+    $('#verlabel').textContent='v'+(curVerIndex+1)+'/'+res.ids.length+(res.more?'+':'');
+    $('#verdots').innerHTML = res.ids.length<=8
+      ? res.ids.map((_,i)=>`<span class="dot ${i===curVerIndex?'on':''}"></span>`).join('') : '';
+  } else vc.classList.add('hidden');
+  updateNavhint();
+}
+
+async function loadChildren(id,seq){
+  let res={ids:[],more:false};
+  try{ res = await withLoad(ord.children(id,0)); }catch{}
+  if(seq!==loadSeq) return;
+  curChildren=res.ids.slice(); curChildrenMore=res.more;
+  $('#nPosts').textContent = curChildren.length + (res.more?'+':'');
+  $('#nFollowers').innerHTML = fmt(curChildren.length) + (res.more?'<span class="plus">+</span>':'');
+  const vb=$('#viewChildren');
+  if(curChildren.length){ vb.classList.remove('hidden'); vb.onclick=()=>openChildFeed(id); }
+  renderPosts(seq); updateRail(); updateNavhint();
+  // ρηχό probe: υπάρχουν βαθύτεροι απόγονοι; (πρώτα 8 children)
+  if(!res.more && curChildren.length){
+    (async()=>{
+      for(const c of curChildren.slice(0,8)){
+        try{ const k=await ord.childCount(c); if(seq!==loadSeq) return;
+          if(k.n>0){ $('#nFollowers').innerHTML=fmt(curChildren.length)+'<span class="plus">+</span>'; return; }
+        }catch{}
+      }
+    })();
+  }
+}
+
+async function loadAncestors(id,seq){
+  const chain=[]; let node=id;
+  for(let g=0; g<12; g++){
+    let ps; try{ ps = await ord.parents(node,0); }catch{ break; }
+    if(seq!==loadSeq) return;
+    if(!ps.ids.length) break;
+    chain.push(ps.ids[0]); node=ps.ids[0];
+  }
+  curAnc={chain, more:chain.length>=12};
+  $('#nFollowing').textContent = chain.length + (curAnc.more?'+':'');
+  updateRail();
+}
+
+function updateRail(){
+  const chain=curAnc.chain;
+  const ups=chain.slice(0,4).map(()=>'<div class="ancdot"></div>').join('');
+  $('#rail').innerHTML =
+    (chain.length?`<div class="seg up"></div>${ups}`:'') +
+    '<div class="node"></div>' +
+    (curChildren.length?'<div class="seg down"></div><div class="desc">CHILDREN</div>':'');
+}
+
+function updateNavhint(){
+  const nh=$('#navhint'); const bits=[];
+  if(curChildren.length) bits.push('<span>tap post → <b>μπες στο προφίλ του</b></span>');
+  if(profSibs && profSibs.length>1) bits.push('<span><b>↕</b> αδέρφια</span>');
+  if(curVersions.length>1) bits.push('<span><b>↔</b> εκδοχές</span>');
+  nh.innerHTML=bits.join(''); nh.classList.toggle('empty',!bits.length);
+}
+
+/* ---------- posts (children ως grid, batch ως collage) ---------- */
+function groupBatches(ids){
+  const byTx=new Map();
+  for(const id of ids){ const t=txidOf(id); if(!byTx.has(t)) byTx.set(t,[]); byTx.get(t).push(id); }
+  const tiles=[];
+  for(const id of ids){ const t=txidOf(id); const grp=byTx.get(t);
+    if(grp.length>1){ if(grp[0]===id) tiles.push({batch:true, ids:grp}); }
+    else tiles.push({batch:false, id}); }
+  return tiles;
+}
+function attachLongPress(elm,fn){
+  let timer=null, fired=false;
+  const start=()=>{ fired=false; timer=setTimeout(()=>{ fired=true; fn(); },480); };
+  const cancel=()=>{ clearTimeout(timer); };
+  elm.addEventListener('touchstart',start,{passive:true});
+  elm.addEventListener('touchend',cancel); elm.addEventListener('touchmove',cancel,{passive:true});
+  elm.addEventListener('mousedown',start); elm.addEventListener('mouseup',cancel);
+  elm.addEventListener('mouseleave',cancel);
+  elm.addEventListener('click',e=>{ if(fired){ e.stopImmediatePropagation(); e.preventDefault(); fired=false; } },true);
+}
+function renderPosts(seq){
+  const grid=$('#postGrid');
+  $('#postCount').textContent = curChildren.length
+    ? curChildren.length+(curChildrenMore?'+':'')+' items' : '';
+  grid.innerHTML='';
+  if(!curChildren.length){ grid.innerHTML='<div class="empty">δεν έχει posts — φύλλο</div>'; return; }
+  appendTiles(grid, curChildren, seq);
+  if(curChildrenMore) addMoreTile(grid, seq);
+}
+// ένα post-tile — ίδιο παντού (posts grid ΚΑΙ collage): tap = προφίλ,
+// long-press = feed, ♥ = πλήθος children. beforeNav κλείνει overlays πριν την πλοήγηση.
+function buildTile(id,{sibs=null,beforeNav=null}={}){
+  const cell=el('div','cell');
+  const th=el('div','thumb'); cell.appendChild(th);
+  lazyMount(cell,()=>{
+    renderContent(th,id);
+    ord.childCount(id).then(k=>{
+      if(k.n>0){ const b=el('div','kids'); b.textContent='♥ '+k.n+(k.more?'+':''); cell.appendChild(b); }
+    }).catch(()=>{});
+  });
+  const nav=fn=>{ if(beforeNav) beforeNav(); fn(); };
+  cell.onclick=()=>nav(()=>openProfile(id,{sibs:sibs?sibs():null}));
+  attachLongPress(cell,()=>nav(()=>openChildFeed(id)));
+  return cell;
+}
+function appendTiles(grid, ids, seq){
+  const tiles=groupBatches(ids);
+  for(const t of tiles){
+    if(t.batch){
+      const cell=el('div','cell batch');
+      const stack=el('div','stack'); cell.appendChild(stack);
+      const badge=el('div','badge'); badge.textContent='▦ '+t.ids.length; cell.appendChild(badge);
+      t.ids.slice(0,3).forEach((cid,i)=>{
+        const th=el('div','thumb'); const off=i*6;
+        th.style.cssText=`left:${6+off}px;top:${6+off}px;right:${6+off}px;bottom:${6+off}px;`+
+          `z-index:${3-i};border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);background:#0b0d11;`;
+        stack.appendChild(th);
+        lazyMount(th,()=>renderContent(th,cid));
+      });
+      cell.onclick=()=>openBatch(t.ids);
+      grid.appendChild(cell);
+    } else {
+      grid.appendChild(buildTile(t.id,{sibs:()=>curChildren.slice()}));
+    }
+  }
+}
+function addMoreTile(grid,seq){
+  const m=el('button','cell more'); const lbl=el('span'); lbl.textContent='+ περισσότερα';
+  m.appendChild(lbl);
+  m.onclick=async()=>{
+    m.disabled=true; lbl.textContent='…';
+    const page=Math.floor(curChildren.length/100);
+    let r; try{ r=await withLoad(ord.children(cur.id,page)); }
+    catch{ m.disabled=false; lbl.textContent='+ περισσότερα'; toast('σφάλμα δικτύου'); return; }
+    if(seq!==loadSeq) return;
+    m.remove();
+    const fresh=r.ids.filter(x=>!curChildren.includes(x));
+    curChildren.push(...fresh); curChildrenMore=r.more;
+    appendTiles(grid,fresh,seq);
+    if(r.more) addMoreTile(grid,seq);
+    $('#postCount').textContent=curChildren.length+(r.more?'+':'')+' items';
+    $('#nPosts').textContent=curChildren.length+(r.more?'+':'');
+  };
+  grid.appendChild(m);
+}
+
+/* ---------- bottom sheet drag ---------- */
+const sheet=$('#sheet');
+(function sheetDrag(){
+  const head=$('#sheetHead'); let startY=0, startOpen=false, dragging=false, dy=0;
+  const H=()=>sheet.getBoundingClientRect().height;
+  const onDown=e=>{ dragging=true; startY=(e.touches?e.touches[0]:e).clientY; startOpen=sheet.classList.contains('open');
+    sheet.style.transition='none'; dy=0; };
+  const onMove=e=>{ if(!dragging) return; const y=(e.touches?e.touches[0]:e).clientY; dy=y-startY;
+    const base=startOpen?0:(H()-62); let t=Math.max(0,Math.min(H()-62, base+dy));
+    sheet.style.transform=`translateY(${t}px)`; e.preventDefault(); };
+  const onUp=()=>{ if(!dragging) return; dragging=false; sheet.style.transition='';
+    sheet.style.transform=''; const opened = startOpen ? dy<80 : dy<-40; sheet.classList.toggle('open',opened); };
+  head.addEventListener('mousedown',onDown); head.addEventListener('touchstart',onDown,{passive:true});
+  window.addEventListener('mousemove',onMove); window.addEventListener('touchmove',onMove,{passive:false});
+  window.addEventListener('mouseup',onUp); window.addEventListener('touchend',onUp);
+  head.addEventListener('click',()=>{ if(Math.abs(dy)<6) sheet.classList.toggle('open'); });
+})();
+$('#statPosts').onclick=()=>sheet.classList.add('open');
+
+/* ---------- viewer: feed με τα children ενός inscription ---------- */
+const viewer=$('#viewer');
+let vFeed=[], vFeedMore=false, vIndex=0, vVersions=[], vVerIndex=0, vId=null, vOwner=null, vOwnerLabel='';
+let vSeq=0, vInfoCur=null, vHeart='';
+async function openChildFeed(ownerId){
+  let res; try{ res = await withLoad(ord.children(ownerId,0)); }
+  catch{ toast('σφάλμα δικτύου'); return; }
+  if(!res.ids.length){ toast('δεν έχει children'); return; }
+  vOwner=ownerId; vOwnerLabel=shortId(ownerId);
+  displayName(ownerId).then(n=>{ vOwnerLabel=n; refreshVMeta(); });
+  vFeed=res.ids.slice(); vFeedMore=res.more; vIndex=0;
+  viewer.classList.add('on');
+  loadViewer(vFeed[0]);
+}
+async function loadViewer(id){
+  vId=id; const seq=++vSeq;
+  vVersions=[id]; vVerIndex=0; vHeart='';
+  $('#enterPulse').style.display='none';
+  let info; try{ info = await withLoad(ord.inscription(id)); }
+  catch{ toast('σφάλμα δικτύου'); return; }
+  if(seq!==vSeq) return;
+  vInfoCur=info;
+  renderContent($('#vmedia'), id, {big:true});
+  const nameEl=$('#vname'); nameEl.innerHTML='';
+  const ns=el('span'); ns.textContent=shortId(id); nameEl.appendChild(ns);
+  const tp=el('span','type'); tp.textContent='…'; nameEl.appendChild(tp);
+  effType(info).then(ct=>{ if(seq===vSeq) tp.textContent=(ct||'').split(';')[0].split('/')[1]||'data'; });
+  displayName(id).then(n=>{ if(seq===vSeq) ns.textContent=n; });
+  refreshVMeta();
+  ord.childCount(id).then(k=>{
+    if(seq!==vSeq) return;
+    vHeart=' · ♥ '+k.n+(k.more?'+':''); refreshVMeta();
+    $('#enterPulse').style.display = k.n>0 ? 'flex' : 'none';
+  }).catch(()=>{});
+  if(info.sat!=null){
+    ord.sat(info.sat,0).then(r=>{
+      if(seq!==vSeq) return;
+      if(r.ids.indexOf(id)>=0){ vVersions=r.ids; vVerIndex=r.ids.indexOf(id); }
+    }).catch(()=>{});
+  }
+}
+function refreshVMeta(){
+  if(!vInfoCur || !viewer.classList.contains('on')) return;
+  $('#vmeta').textContent = 'μέσα στο @'+vOwnerLabel+' · '+(vIndex+1)+'/'+vFeed.length+(vFeedMore?'+':'')+
+    ' · #'+vInfoCur.number + vHeart;
+}
+async function viewerNav(dir){
+  if(dir==='up'){
+    if(vIndex<vFeed.length-1){ vIndex++; loadViewer(vFeed[vIndex]); }
+    else if(vFeedMore){
+      const page=Math.floor(vFeed.length/100);
+      try{ const r=await withLoad(ord.children(vOwner,page));
+        const fresh=r.ids.filter(x=>!vFeed.includes(x));
+        vFeed.push(...fresh); vFeedMore=r.more;
+        if(vIndex<vFeed.length-1){ vIndex++; loadViewer(vFeed[vIndex]); }
+      }catch{}
+    }
+  }
+  else if(dir==='down' && vIndex>0){ vIndex--; loadViewer(vFeed[vIndex]); }
+  else if(dir==='left' && vVerIndex<vVersions.length-1){ loadViewer(vVersions[vVerIndex+1]); }
+  else if(dir==='right' && vVerIndex>0){ loadViewer(vVersions[vVerIndex-1]); }
+}
+function closeViewer(){ viewer.classList.remove('on'); $('#vmedia').innerHTML=''; }
+// swipe + tap on viewer media
+(function viewerGestures(){
+  const zone=viewer; let sx=0,sy=0,moved=false,down=false;
+  const start=e=>{ down=true; moved=false; const p=e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; };
+  const move=e=>{ if(!down)return; const p=e.touches?e.touches[0]:e; if(Math.abs(p.clientX-sx)>8||Math.abs(p.clientY-sy)>8) moved=true; };
+  const end=e=>{ if(!down)return; down=false; const p=e.changedTouches?e.changedTouches[0]:e;
+    const dx=p.clientX-sx, dy=p.clientY-sy; const ax=Math.abs(dx), ay=Math.abs(dy);
+    if(ax<30&&ay<30){ // tap -> μπες στο προφίλ αυτού του child
+      const t=e.target;
+      if(t.closest('#vback')||t.closest('#vinfo')) return;
+      const id=vId; closeViewer();
+      openProfile(id,{sibs:vFeed.slice()});
+      return;
+    }
+    if(ax>ay){ viewerNav(dx<0?'left':'right'); } else { viewerNav(dy<0?'up':'down'); }
+  };
+  zone.addEventListener('mousedown',start); zone.addEventListener('touchstart',start,{passive:true});
+  window.addEventListener('mousemove',move); window.addEventListener('touchmove',move,{passive:true});
+  zone.addEventListener('mouseup',end); zone.addEventListener('touchend',end);
+})();
+$('#vback').onclick=()=>closeViewer();
+$('#vinfo').onclick=()=>{ const id=vId; closeViewer(); showInfo(id); };
+
+/* ---------- batch collage — ίδια tiles με τα posts, σε 3-στηλο grid ---------- */
+const batchEl=$('#batch');
+function openBatch(ids){
+  batchEl.classList.add('on');
+  $('#batchSub').textContent = ids.length+' inscriptions · tx '+shortId(txidOf(ids[0]));
+  const grid=$('#batchGrid'); grid.innerHTML='';
+  ids.forEach(id=>{
+    const cell=buildTile(id,{ sibs:()=>ids.slice(),
+      beforeNav:()=>batchEl.classList.remove('on') });
+    // μέσα στο batch η ταυτότητα κάθε μέλους είναι το index του στο transaction
+    const m=id.match(/i(\d+)$/);
+    const c=el('div','idxchip'); c.textContent='i'+(m?m[1]:'?'); cell.appendChild(c);
+    grid.appendChild(cell);
+  });
+}
+$('#batchBack').onclick=()=>batchEl.classList.remove('on');
+
+/* ---------- slide-up panel: followers / following / info ---------- */
+const panel=$('#panel'), scrim=$('#scrim');
+let panelSeq=0;
+function openPanel(){ panel.classList.add('on'); scrim.classList.add('on'); }
+function closePanel(){ panel.classList.remove('on'); scrim.classList.remove('on'); panelSeq++; }
+scrim.onclick=closePanel; $('#panelClose').onclick=closePanel;
+
+$('#statFollowers').onclick=()=>showFollowers();
+$('#statFollowing').onclick=()=>showFollowing();
+$('#pinfo').onclick=()=>{ if(cur) showInfo(cur.id); };
+
+function rowEl(id){
+  const row=el('div','row');
+  const av=el('div','av'); row.appendChild(av);
+  const info=el('div','info');
+  const n=el('div','n'); n.textContent=shortId(id); info.appendChild(n);
+  const s=el('div','s'); s.textContent='…'; info.appendChild(s);
+  row.appendChild(info);
+  const d=el('div','depth'); row.appendChild(d);
+  lazyMount(row,()=>{                      // ΟΛΑ τα requests της γραμμής μόνο όταν φανεί
+    renderContent(av,id);
+    displayName(id).then(x=>{ n.textContent=x; });
+    ord.inscription(id).then(m=>{ s.textContent='#'+m.number+' · '+((m.content_type||'?').split(';')[0]); })
+      .catch(()=>{ s.textContent='—'; });
+    ord.childCount(id).then(k=>{ if(k.n) d.textContent='♥ '+k.n+(k.more?'+':''); }).catch(()=>{});
+  });
+  row.onclick=()=>{ closePanel(); if(viewer.classList.contains('on')) closeViewer(); openProfile(id); };
+  return row;
+}
+function fillRows(container,ids){
+  container.innerHTML='';
+  for(const id of ids) container.appendChild(rowEl(id));
+}
+
+async function showFollowers(){
+  if(!cur) return;
+  const seq=++panelSeq;
+  $('#panelTitle').textContent='followers · απόγονοι';
+  openPanel();
+  const body=$('#panelBody');
+  body.innerHTML =
+    `<div class="counting">άμεσα children: <b>${curChildren.length}${curChildrenMore?'+':''}</b></div>`+
+    `<div id="frows"></div>`+
+    (curChildren.length?`<button class="loadall" id="loadAll">φόρτωσε όλους τους απογόνους ↓</button>`:'');
+  if(!curChildren.length){ body.querySelector('.counting').textContent='κανένα child — φύλλο'; return; }
+  fillRows($('#frows'),curChildren);
+  $('#loadAll').onclick=async()=>{
+    const btn=$('#loadAll'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> μέτρηση…';
+    const MAX=1500;                        // όριο ασφαλείας — ζωντανά δέντρα μπορεί να είναι τεράστια
+    const all=[]; const seen=new Set([cur.id]); const q=[cur.id];
+    let truncated=false;
+    while(q.length && !truncated){
+      if(seq!==panelSeq) return;           // panel έκλεισε — σταμάτα το BFS
+      const nid=q.shift();
+      let page=0, more=true;
+      while(more && !truncated){
+        let r; try{ r=await ord.children(nid,page); }catch{ break; }
+        if(seq!==panelSeq) return;
+        for(const c of r.ids){
+          if(!seen.has(c)){ seen.add(c); all.push(c); q.push(c); }
+          if(all.length>=MAX){ truncated=true; break; }
+        }
+        more=r.more; page++;
+        btn.innerHTML='<span class="spin"></span> '+all.length+' απόγονοι…';
+      }
+    }
+    $('#panelTitle').textContent='followers · '+all.length+(truncated?'+':'')+' απόγονοι';
+    body.querySelector('.counting').innerHTML='σύνολο απογόνων: <b>'+all.length+(truncated?'+</b> (όριο '+MAX+')':'</b>');
+    btn.remove();
+    fillRows($('#frows'),all);
+  };
+}
+
+async function showFollowing(){
+  if(!cur) return;
+  const seq=++panelSeq;
+  $('#panelTitle').textContent='following · πρόγονοι';
+  openPanel();
+  const body=$('#panelBody');
+  body.innerHTML='<div class="counting"><span class="spin"></span> αναδρομή προς τη ρίζα…</div><div id="frows"></div>';
+  const chain=[]; let node=cur.id;
+  for(let g=0; g<60; g++){
+    let ps; try{ ps=await ord.parents(node,0); }catch{ break; }
+    if(seq!==panelSeq) return;
+    if(!ps.ids.length) break;
+    chain.push(ps.ids[0]); node=ps.ids[0];
+  }
+  if(seq!==panelSeq) return;
+  body.querySelector('.counting').innerHTML = chain.length
+    ? ('αλυσίδα προγόνων: <b>'+chain.length+'</b> ως τη ρίζα')
+    : 'είναι η ρίζα — κανένας πρόγονος';
+  fillRows($('#frows'),chain);
+}
+
+/* ---------- info panel (πραγματικά metadata) ---------- */
+async function showInfo(id){
+  let info; try{ info = await withLoad(ord.inscription(id)); }
+  catch{ toast('σφάλμα δικτύου'); return; }
+  const seq=++panelSeq;
+  $('#panelTitle').textContent='profile info · metadata';
+  openPanel();
+  const rows=[
+    ['inscription id', info.id],
+    ['number', '#'+info.number],
+    ['sat', info.sat!=null?info.sat:'—'],
+    ['content type', info.content_type||'—'],
+    ['content length', info.content_length!=null?fmtBytes(info.content_length):'—'],
+    ['reveal block', info.height],
+    ['timestamp', dateFmt(info.timestamp)],
+    ['fee', info.fee+' sats'],
+    ['output value', info.value!=null?info.value+' sats':'—'],
+    ['address', info.address||'—'],
+  ];
+  if(info.delegate) rows.push(['delegate', info.delegate]);
+  if(info.charms && info.charms.length) rows.push(['charms', info.charms.join(' · ')]);
+  const body=$('#panelBody');
+  body.innerHTML = rows.map(([k,v])=>
+    `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span></div>`).join('');
+  const addKV=(k,v)=>{ if(seq!==panelSeq) return;
+    body.insertAdjacentHTML('beforeend',
+      `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span></div>`); };
+  if(info.sat!=null)
+    ord.sat(info.sat,0).then(r=>addKV('reinscriptions', r.ids.length+(r.more?'+':'')+' στο ίδιο sat')).catch(()=>{});
+  ord.childCount(id).then(k=>addKV('children', k.n+(k.more?'+':''))).catch(()=>{});
+}
+
+/* ---------- profile-level swipe: εκδοχές ↔ / αδέρφια ↕ ---------- */
+(function profileSwipe(){
+  const zone=$('#profile'); let sx=0,sy=0,down=false;
+  const start=e=>{ if(e.target.closest('.stats')||e.target.closest('.tags')||e.target.closest('#sheet')||e.target.closest('.topbar')) {down=false;return;} down=true; const p=e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; };
+  const end=e=>{ if(!down)return; down=false; const p=e.changedTouches?e.changedTouches[0]:e;
+    const dx=p.clientX-sx, dy=p.clientY-sy, ax=Math.abs(dx), ay=Math.abs(dy);
+    if(ax<60 && ay<60) return;
+    if(ax>ay){ // οριζόντια = εκδοχές (reinscriptions)
+      if(dx<0 && curVerIndex<curVersions.length-1){ const nid=curVersions[curVerIndex+1]; stack[stack.length-1]=nid; openProfile(nid,{push:false}); }
+      else if(dx>0 && curVerIndex>0){ const nid=curVersions[curVerIndex-1]; stack[stack.length-1]=nid; openProfile(nid,{push:false}); }
+    } else if(profSibs && profSibs.length>1){ // κάθετη = αδέρφια (χωρίς αλλαγή βάθους)
+      const i=profSibs.indexOf(cur.id);
+      if(dy<0 && i<profSibs.length-1){ const nid=profSibs[i+1]; stack[stack.length-1]=nid; openProfile(nid,{push:false,sibs:profSibs}); }
+      else if(dy>0 && i>0){ const nid=profSibs[i-1]; stack[stack.length-1]=nid; openProfile(nid,{push:false,sibs:profSibs}); }
+    }};
+  zone.addEventListener('touchstart',start,{passive:true}); zone.addEventListener('mousedown',start);
+  zone.addEventListener('touchend',end); zone.addEventListener('mouseup',end);
+})();
+
+/* ---------- back ---------- */
+$('#back').onclick=()=>{
+  if(stack.length>1){ stack.pop(); const prev=stack[stack.length-1]; openProfile(prev,{push:false}); }
+  else { // πίσω στην αρχική
+    loadSeq++;
+    $('#profile').style.display='none'; $('#pmedia').innerHTML='';
+    $('#start').classList.remove('gone');
+    stack.length=0; sheet.classList.remove('open');
+  }
+};
+
+/* ---------- start: 4 τρόποι εκκίνησης ---------- */
+const MODES = {
+  bitmap: { ph:'αριθμός bitmap · π.χ. 800000',
+    ex:[['800000','800000.bitmap'],['0','0.bitmap']] },
+  id:     { ph:'inscription id (64 hex + iN)',
+    ex:[['681b5373c03e3f819231afd9227f54101395299c9e58356bda278e2f32bef2cdi0','child του #0']] },
+  sat:    { ph:'sat number · π.χ. 1252201400444387',
+    ex:[['1252201400444387','sat του #0']] },
+  number: { ph:'αριθμός inscription · π.χ. 0',
+    ex:[['0','#0'],['64228106','#64228106']] },
+};
+let startMode='bitmap';
+function setMode(m){
+  startMode=m;
+  document.querySelectorAll('#modes .mode').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  $('#bm').placeholder=MODES[m].ph;
+  $('#startErr').textContent='';
+  $('#exRow').innerHTML='δοκιμή: '+MODES[m].ex.map(([v,l])=>
+    `<span data-ex="${esc(v)}">${esc(l)}</span>`).join(' · ');
+}
+document.querySelectorAll('#modes .mode').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+$('#exRow').addEventListener('click',e=>{
+  const s=e.target.closest('span[data-ex]'); if(!s) return;
+  $('#bm').value=s.dataset.ex; begin();
+});
+setMode('bitmap');
+
+async function begin(raw){
+  const err=$('#startErr'); err.textContent='';
+  let val=(raw||$('#bm').value).trim().toLowerCase();
+  if(!val) return;
+  const goBtn=$('#enter');
+  goBtn.disabled=true;
+  let id=null;
+  try{
+    if(/^[0-9a-f]{64}i\d+$/.test(val)){
+      id=val;                                  // πλήρες id — δεκτό σε κάθε mode
+    } else if(startMode==='bitmap'){
+      const n=val.replace(/\.bitmap$/,'');
+      if(!/^\d+$/.test(n)) throw new Error('δώσε αριθμό bitmap, π.χ. 800000');
+      err.textContent='on-chain index: '+n+'.bitmap…';
+      id=await withLoad(getBitmapInscriptionId(parseInt(n,10)));
+    } else if(startMode==='sat'){
+      if(!/^\d+$/.test(val)) throw new Error('δώσε sat number (ακέραιος)');
+      err.textContent='αναζήτηση sat '+val+'…';
+      let r; try{ r=await withLoad(ord.satAt(val,0)); }
+      catch{ throw new Error('δεν υπάρχει inscription στο sat '+val); }
+      if(!r||!r.id) throw new Error('δεν υπάρχει inscription στο sat '+val);
+      id=r.id;
+    } else if(startMode==='number'){
+      const n=val.replace('#','');
+      if(!/^\d+$/.test(n)) throw new Error('δώσε αριθμό inscription, π.χ. 0');
+      err.textContent='αναζήτηση inscription #'+n+'…';
+      try{ id=await withLoad(ord.byNumber(n)); }
+      catch{ throw new Error('δεν βρέθηκε inscription #'+n); }
+    } else {
+      throw new Error('inscription id: 64 hex χαρακτήρες + iN');
+    }
+    err.textContent='';
+  }catch(e){
+    err.textContent=(e&&e.message)?e.message:'σφάλμα αναζήτησης';
+    goBtn.disabled=false;
+    return;
+  }
+  stack.length=0;
+  const ok = await openProfile(id);
+  goBtn.disabled=false;
+  if(!ok) err.textContent='δεν βρέθηκε το inscription στο ordinals.com';
+}
+$('#enter').onclick=()=>begin();
+$('#bm').addEventListener('keydown',e=>{ if(e.key==='Enter') begin(); });
+</script>
+</body>
+</html>
