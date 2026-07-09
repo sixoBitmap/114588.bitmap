@@ -187,15 +187,11 @@
   .cell .kids{ position:absolute; left:6px; bottom:6px; font-size:10px; color:#fff;
     background:rgba(0,0,0,.45); border-radius:6px; padding:2px 6px; display:flex; gap:4px;
     align-items:center; z-index:2; }
-  .cell.more{ background:transparent; border:1px dashed var(--sheet-line);
-    color:var(--sheet-mute); font-size:11px; }
-  .cell.more span{ position:absolute; left:0; top:0; right:0; bottom:0;
-    display:flex; align-items:center; justify-content:center; }
-  /* batch collage tile */
-  .cell.batch{ background:var(--coral); }
-  .cell.batch .stack{ position:absolute; inset:0; }
-  .cell.batch .badge{ position:absolute; right:5px; top:5px; font-size:10px; color:#fff;
-    background:rgba(20,10,6,.72); border-radius:6px; padding:2px 6px; font-weight:600;
+  /* batch collage tile — δείχνει ΜΟΝΟ το 1ο content· coral = σημασιολογία batch */
+  .cell.batch::after{ content:""; position:absolute; left:0; top:0; right:0; bottom:0;
+    border:1.5px solid var(--coral); border-radius:9px; pointer-events:none; z-index:3; }
+  .cell.batch .badge{ position:absolute; right:5px; top:5px; font-size:10px; color:#20100a;
+    background:var(--coral); border-radius:6px; padding:2px 6px; font-weight:600;
     display:flex; align-items:center; gap:4px; z-index:5; }
   .grid .empty{ grid-column:1/-1; text-align:center; color:var(--sheet-mute);
     font-size:12px; padding:40px 0; }
@@ -725,25 +721,47 @@ async function loadVersions(info,seq){
 }
 
 async function loadChildren(id,seq){
-  let res={ids:[],more:false};
-  try{ res = await withLoad(ord.children(id,0)); }catch{}
-  if(seq!==loadSeq) return;
-  curChildren=res.ids.slice(); curChildrenMore=res.more;
-  $('#nPosts').textContent = curChildren.length + (res.more?'+':'');
-  $('#nFollowers').innerHTML = fmt(curChildren.length) + (res.more?'<span class="plus">+</span>':'');
-  const vb=$('#viewChildren');
-  if(curChildren.length){ vb.classList.remove('hidden'); vb.onclick=()=>openChildFeed(id); }
-  renderPosts(seq); updateRail(); updateNavhint();
-  // ρηχό probe: υπάρχουν βαθύτεροι απόγονοι; (πρώτα 8 children)
-  if(!res.more && curChildren.length){
-    (async()=>{
-      for(const c of curChildren.slice(0,8)){
-        try{ const k=await ord.childCount(c); if(seq!==loadSeq) return;
-          if(k.n>0){ $('#nFollowers').innerHTML=fmt(curChildren.length)+'<span class="plus">+</span>'; return; }
-        }catch{}
-      }
-    })();
+  const grid=$('#postGrid');
+  grid.innerHTML=''; tileMap=new Map();
+  curChildren=[]; curChildrenMore=false;
+  const seen=new Set();
+  const MAX_PAGES=200;                     // όριο ασφαλείας: 20.000 children
+  let page=0, more=true, failed=false;
+  // φόρτωσε ΟΛΕΣ τις σελίδες children αυτόματα — τα tiles μπαίνουν προοδευτικά,
+  // το content τους φορτώνει lazy καθώς σκρολάρεις (κανένα κουμπί)
+  while(more && page<MAX_PAGES){
+    let res; try{ res=await withLoad(ord.children(id,page)); }catch{ failed=true; break; }
+    if(seq!==loadSeq) return;
+    const fresh=res.ids.filter(x=>!seen.has(x));
+    fresh.forEach(x=>seen.add(x));
+    curChildren.push(...fresh);
+    more=res.more; curChildrenMore=more;
+    appendChildIds(grid,fresh);
+    if(page===0){
+      const vb=$('#viewChildren');
+      if(curChildren.length){ vb.classList.remove('hidden'); vb.onclick=()=>openChildFeed(id); }
+      updateRail(); updateNavhint();
+    }
+    updatePostCounts(more);
+    page++;
   }
+  if(seq!==loadSeq) return;
+  if(failed) toast('σφάλμα δικτύου — μερική λίστα posts');
+  if(more && !failed) toast('σταμάτησα στα '+curChildren.length+' children');
+  updatePostCounts(false);
+  if(!curChildren.length){
+    grid.innerHTML='<div class="empty">δεν έχει posts — φύλλο</div>';
+    updateRail(); updateNavhint();
+    return;
+  }
+  // ρηχό probe: υπάρχουν βαθύτεροι απόγονοι; (πρώτα 8 children)
+  (async()=>{
+    for(const c of curChildren.slice(0,8)){
+      try{ const k=await ord.childCount(c); if(seq!==loadSeq) return;
+        if(k.n>0){ $('#nFollowers').innerHTML=fmt(curChildren.length)+'<span class="plus">+</span>'; return; }
+      }catch{}
+    }
+  })();
 }
 
 async function loadAncestors(id,seq){
@@ -777,15 +795,8 @@ function updateNavhint(){
 }
 
 /* ---------- posts (children ως grid, batch ως collage) ---------- */
-function groupBatches(ids){
-  const byTx=new Map();
-  for(const id of ids){ const t=txidOf(id); if(!byTx.has(t)) byTx.set(t,[]); byTx.get(t).push(id); }
-  const tiles=[];
-  for(const id of ids){ const t=txidOf(id); const grp=byTx.get(t);
-    if(grp.length>1){ if(grp[0]===id) tiles.push({batch:true, ids:grp}); }
-    else tiles.push({batch:false, id}); }
-  return tiles;
-}
+const idxOf = id => { const m=id.match(/i(\d+)$/); return m?parseInt(m[1],10):0; };
+const sortByIdx = ids => ids.slice().sort((a,b)=>idxOf(a)-idxOf(b));
 function attachLongPress(elm,fn){
   let timer=null, fired=false;
   const start=()=>{ fired=false; timer=setTimeout(()=>{ fired=true; fn(); },480); };
@@ -796,14 +807,12 @@ function attachLongPress(elm,fn){
   elm.addEventListener('mouseleave',cancel);
   elm.addEventListener('click',e=>{ if(fired){ e.stopImmediatePropagation(); e.preventDefault(); fired=false; } },true);
 }
-function renderPosts(seq){
-  const grid=$('#postGrid');
-  $('#postCount').textContent = curChildren.length
-    ? curChildren.length+(curChildrenMore?'+':'')+' items' : '';
-  grid.innerHTML='';
-  if(!curChildren.length){ grid.innerHTML='<div class="empty">δεν έχει posts — φύλλο</div>'; return; }
-  appendTiles(grid, curChildren, seq);
-  if(curChildrenMore) addMoreTile(grid, seq);
+// ακριβή νούμερα παντού· «…» όσο φορτώνουν ακόμη σελίδες children
+function updatePostCounts(loading){
+  const t=curChildren.length;
+  $('#nPosts').textContent = t+(loading?'…':'');
+  $('#nFollowers').textContent = fmt(t)+(loading?'…':'');
+  $('#postCount').textContent = t ? (t+(loading?'…':'')+' items') : '';
 }
 // ένα post-tile — ίδιο παντού (posts grid ΚΑΙ collage): tap = προφίλ,
 // long-press = feed, ♥ = πλήθος children. beforeNav κλείνει overlays πριν την πλοήγηση.
@@ -821,45 +830,35 @@ function buildTile(id,{sibs=null,beforeNav=null}={}){
   attachLongPress(cell,()=>nav(()=>openChildFeed(id)));
   return cell;
 }
-function appendTiles(grid, ids, seq){
-  const tiles=groupBatches(ids);
-  for(const t of tiles){
-    if(t.batch){
-      const cell=el('div','cell batch');
-      const stack=el('div','stack'); cell.appendChild(stack);
-      const badge=el('div','badge'); badge.textContent='▦ '+t.ids.length; cell.appendChild(badge);
-      t.ids.slice(0,3).forEach((cid,i)=>{
-        const th=el('div','thumb'); const off=i*6;
-        th.style.cssText=`left:${6+off}px;top:${6+off}px;right:${6+off}px;bottom:${6+off}px;`+
-          `z-index:${3-i};border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.3);background:#0b0d11;`;
-        stack.appendChild(th);
-        lazyMount(th,()=>renderContent(th,cid));
-      });
-      cell.onclick=()=>openBatch(t.ids);
-      grid.appendChild(cell);
+/* incremental ομαδοποίηση batch: ένα tile ανά txid· όταν έρθει 2ο μέλος του
+   ίδιου tx (ακόμη κι από επόμενη σελίδα children) το tile γίνεται collage.
+   Το collage tile φορτώνει ΜΟΝΟ το content του 1ου μέλους (i0). */
+let tileMap=new Map();   // txid -> {ids, batch, cell, badge}
+function appendChildIds(grid, ids){
+  for(const id of ids){
+    const tx=txidOf(id);
+    let g=tileMap.get(tx);
+    if(!g){
+      g={ ids:[id], batch:false, cell:buildTile(id,{sibs:()=>curChildren.slice()}), badge:null };
+      tileMap.set(tx,g);
+      grid.appendChild(g.cell);
     } else {
-      grid.appendChild(buildTile(t.id,{sibs:()=>curChildren.slice()}));
+      g.ids.push(id);
+      if(!g.batch) upgradeToBatch(grid,g);
+      else g.badge.textContent='▦ '+g.ids.length;
     }
   }
 }
-function addMoreTile(grid,seq){
-  const m=el('button','cell more'); const lbl=el('span'); lbl.textContent='+ περισσότερα';
-  m.appendChild(lbl);
-  m.onclick=async()=>{
-    m.disabled=true; lbl.textContent='…';
-    const page=Math.floor(curChildren.length/100);
-    let r; try{ r=await withLoad(ord.children(cur.id,page)); }
-    catch{ m.disabled=false; lbl.textContent='+ περισσότερα'; toast('σφάλμα δικτύου'); return; }
-    if(seq!==loadSeq) return;
-    m.remove();
-    const fresh=r.ids.filter(x=>!curChildren.includes(x));
-    curChildren.push(...fresh); curChildrenMore=r.more;
-    appendTiles(grid,fresh,seq);
-    if(r.more) addMoreTile(grid,seq);
-    $('#postCount').textContent=curChildren.length+(r.more?'+':'')+' items';
-    $('#nPosts').textContent=curChildren.length+(r.more?'+':'');
-  };
-  grid.appendChild(m);
+function upgradeToBatch(grid,g){
+  g.batch=true;
+  const first=sortByIdx(g.ids)[0];
+  const cell=el('div','cell batch');
+  const th=el('div','thumb'); cell.appendChild(th);
+  lazyMount(cell,()=>renderContent(th,first));
+  g.badge=el('div','badge'); g.badge.textContent='▦ '+g.ids.length; cell.appendChild(g.badge);
+  cell.onclick=()=>openBatch(sortByIdx(g.ids));
+  grid.replaceChild(cell,g.cell);
+  g.cell=cell;
 }
 
 /* ---------- bottom sheet drag ---------- */
@@ -967,22 +966,45 @@ function closeViewer(){ viewer.classList.remove('on'); $('#vmedia').innerHTML=''
 $('#vback').onclick=()=>closeViewer();
 $('#vinfo').onclick=()=>{ const id=vId; closeViewer(); showInfo(id); };
 
-/* ---------- batch collage — ίδια tiles με τα posts, σε 3-στηλο grid ---------- */
+/* ---------- batch collage — ίδια tiles με τα posts, σε 3-στηλο grid.
+   Περιέχει ΟΛΟ το reveal transaction: από το i0 ως το τελευταίο index
+   (οι δείκτες σε ένα tx είναι συνεχόμενοι — ανίχνευση μέχρι το πρώτο κενό).
+   Τα γνωστά children δεν ξαναζητιούνται· τα άγνωστα indices ελέγχονται ένα-ένα.
+   Το content κάθε tile φορτώνει lazy καθώς σκρολάρεις. ---------- */
 const batchEl=$('#batch');
-function openBatch(ids){
+let batchSeq=0;
+async function openBatch(ids){
+  const seq=++batchSeq;
   batchEl.classList.add('on');
-  $('#batchSub').textContent = ids.length+' inscriptions · tx '+shortId(txidOf(ids[0]));
+  const tx=txidOf(ids[0]);
+  const known=new Set(ids);
   const grid=$('#batchGrid'); grid.innerHTML='';
-  ids.forEach(id=>{
-    const cell=buildTile(id,{ sibs:()=>ids.slice(),
-      beforeNav:()=>batchEl.classList.remove('on') });
-    // μέσα στο batch η ταυτότητα κάθε μέλους είναι το index του στο transaction
-    const m=id.match(/i(\d+)$/);
-    const c=el('div','idxchip'); c.textContent='i'+(m?m[1]:'?'); cell.appendChild(c);
+  const sub=$('#batchSub');
+  const members=[];
+  const closeBatch=()=>{ batchSeq++; batchEl.classList.remove('on'); };
+  const addCell=id=>{
+    const cell=buildTile(id,{ sibs:()=>members.slice(), beforeNav:closeBatch });
+    const c=el('div','idxchip'); c.textContent='i'+idxOf(id); cell.appendChild(c);
     grid.appendChild(cell);
-  });
+  };
+  const MAX=10000;                        // όριο ασφαλείας
+  let k=0;
+  while(k<MAX){
+    if(seq!==batchSeq) return;            // το collage έκλεισε — σταμάτα την ανίχνευση
+    const mid=tx+'i'+k;
+    let exists=known.has(mid);
+    if(!exists){
+      try{ await withLoad(ord.inscription(mid)); exists=true; }catch{ exists=false; }
+      if(seq!==batchSeq) return;
+    }
+    if(!exists) break;
+    members.push(mid); addCell(mid);
+    sub.textContent=members.length+' inscriptions · tx '+shortId(tx)+' …';
+    k++;
+  }
+  sub.textContent=members.length+' inscriptions · tx '+shortId(tx);
 }
-$('#batchBack').onclick=()=>batchEl.classList.remove('on');
+$('#batchBack').onclick=()=>{ batchSeq++; batchEl.classList.remove('on'); };
 
 /* ---------- slide-up panel: followers / following / info ---------- */
 const panel=$('#panel'), scrim=$('#scrim');
