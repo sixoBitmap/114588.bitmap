@@ -21,3 +21,5 @@ Welcome at 114588 Portal
 [Bitmap Chain](https://sixobitmap.github.io/114588.bitmap/bitmap-chain.html) 
 
 [Bitmap hotel](https://sixobitmap.github.io/114588.bitmap/bitmap-hotel.html) 
+
+[Ordinals Mobile](https://sixobitmap.github.io/114588.bitmap/bitmap-profile-live.html) 
