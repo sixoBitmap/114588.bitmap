@@ -82,8 +82,13 @@
 
   /* ── profile ── */
   #profile{ position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; }
-  .media{ position:absolute; inset:0; }
-  .media::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  .media{ position:absolute; inset:0; overflow:hidden; }
+  /* pager: τρεις σελίδες — προηγούμενο αδέρφι πάνω, τρέχον, επόμενο κάτω.
+     Το gradient ζει ΣΤΗ σελίδα ώστε να κυλάει μαζί με το content. */
+  .media .page{ position:absolute; left:0; top:0; right:0; bottom:0; overflow:hidden;
+    will-change:transform; background:var(--ink); }
+  .media .page::after{ content:""; position:absolute; left:0; top:0; right:0; bottom:0;
+    pointer-events:none;
     background:linear-gradient(180deg, rgba(11,13,17,.55) 0%, rgba(11,13,17,0) 22%,
       rgba(11,13,17,0) 40%, rgba(11,13,17,.82) 100%); }
 
@@ -324,7 +329,9 @@
 
   <!-- profile -->
   <div id="profile" style="display:none">
-    <div class="media" id="pmedia"></div>
+    <div class="media" id="pmedia">
+      <div class="page"></div><div class="page"></div><div class="page"></div>
+    </div>
     <div class="rail" id="rail"></div>
     <div class="topbar">
       <button class="iconbtn" id="back">‹</button>
@@ -643,8 +650,44 @@ let curAnc={chain:[],more:false};
 let profSibs=null;              // αδέρφια του τρέχοντος προφίλ (αν μπήκα από grid)
 let loadSeq=0;                  // ακυρώνει stale async updates σε γρήγορη πλοήγηση
 
+/* ---------- media pager: TikTok-style κάθετη κύλιση σε αδέρφια ----------
+   Τρεις μόνιμες σελίδες με εναλλασσόμενους ρόλους (prev/cur/next) — ποτέ
+   αναδόμηση DOM, ώστε videos/iframes να μη γίνονται reload στο commit. */
+const pagerEl=$('#pmedia');
+const pager={ pages:[...pagerEl.children], roles:{prev:0,cur:1,next:2},
+  prevId:null, nextId:null, animating:false };
+const pagerPage=r=>pager.pages[pager.roles[r]];
+const pagerCur=()=>pagerPage('cur');
+function setPagerTransforms(dy,animate){
+  ['prev','cur','next'].forEach(r=>{
+    const p=pagerPage(r);
+    p.style.transition=animate?'transform .32s cubic-bezier(.32,.72,0,1)':'none';
+    const base=r==='prev'?'-100%':r==='next'?'100%':'0%';
+    p.style.transform=`translate3d(0,calc(${base} + ${dy}px),0)`;
+  });
+}
+function renderPage(page,id){
+  if(page.dataset.rid===id) return;      // ίδιο content — μην ξαναφορτώσεις
+  page.dataset.rid=id;
+  renderContent(page,id,{big:true});
+}
+function clearPage(page){ page.dataset.rid=''; page.innerHTML=''; }
+function updatePagerNeighbors(id){
+  const i=profSibs?profSibs.indexOf(id):-1;
+  pager.prevId=(i>0)?profSibs[i-1]:null;
+  pager.nextId=(i>=0&&i<profSibs.length-1)?profSibs[i+1]:null;
+  if(pager.prevId) renderPage(pagerPage('prev'),pager.prevId); else clearPage(pagerPage('prev'));
+  if(pager.nextId) renderPage(pagerPage('next'),pager.nextId); else clearPage(pagerPage('next'));
+}
+function fadeInfo(x){
+  ['.idblock','.stats','.tags','.navhint','.rail'].forEach(s=>{
+    const n=document.querySelector('#profile '+s); if(n) n.style.opacity=String(1-x);
+  });
+}
+setPagerTransforms(0,false);
+
 /* ---------- render profile ---------- */
-async function openProfile(id,{push=true,sibs=null}={}){
+async function openProfile(id,{push=true,sibs=null,keepMedia=false}={}){
   id=String(id).toLowerCase();
   let info;
   try{ info = await withLoad(ord.inscription(id)); }
@@ -659,8 +702,11 @@ async function openProfile(id,{push=true,sibs=null}={}){
   $('#start').classList.add('gone');
   sheet.classList.remove('open');
 
-  // media — το πραγματικό content
-  renderContent($('#pmedia'), id, {big:true});
+  // media — pager: το τρέχον content, με το προηγούμενο αδέρφι «κολλημένο»
+  // από πάνω και το επόμενο από κάτω (κύλιση στο profileGestures).
+  // keepMedia: μετά από slide το content είναι ήδη στη σωστή σελίδα.
+  if(!keepMedia) renderPage(pagerCur(), id);
+  updatePagerNeighbors(id);
 
   // name + meta
   const nameEl=$('#pname'); nameEl.innerHTML='';
@@ -1132,23 +1178,81 @@ async function showInfo(id){
   ord.childCount(id).then(k=>addKV('children', k.n+(k.more?'+':''))).catch(()=>{});
 }
 
-/* ---------- profile-level swipe: εκδοχές ↔ / αδέρφια ↕ ---------- */
-(function profileSwipe(){
-  const zone=$('#profile'); let sx=0,sy=0,down=false;
-  const start=e=>{ if(e.target.closest('.stats')||e.target.closest('.tags')||e.target.closest('#sheet')||e.target.closest('.topbar')) {down=false;return;} down=true; const p=e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; };
-  const end=e=>{ if(!down)return; down=false; const p=e.changedTouches?e.changedTouches[0]:e;
-    const dx=p.clientX-sx, dy=p.clientY-sy, ax=Math.abs(dx), ay=Math.abs(dy);
-    if(ax<60 && ay<60) return;
-    if(ax>ay){ // οριζόντια = εκδοχές (reinscriptions)
+/* ---------- profile gestures ----------
+   κάθετα = TikTok-style pager σε αδέρφια: το content ακολουθεί το δάχτυλο,
+   το επόμενο/προηγούμενο είναι κολλημένο από κάτω/πάνω, snap στο άφημα
+   (απόσταση >22% της οθόνης ή flick). Χωρίς γείτονα: rubber-band.
+   οριζόντια = εκδοχές (reinscriptions), όπως πριν. */
+function settlePager(dir){
+  pager.animating=true;
+  const H=pagerEl.getBoundingClientRect().height||1;
+  setPagerTransforms(dir===0?0:(dir<0?-H:H),true);
+  setTimeout(()=>{
+    pager.animating=false; fadeInfo(0);
+    if(dir!==0) commitPager(dir);
+  },340);
+}
+function commitPager(dir){
+  const nid = dir<0 ? pager.nextId : pager.prevId;
+  if(!nid){ setPagerTransforms(0,false); return; }
+  const r=pager.roles;
+  pager.roles = dir<0
+    ? {prev:r.cur, cur:r.next, next:r.prev}     // κατέβηκα: το κάτω έγινε τρέχον
+    : {prev:r.next, cur:r.prev, next:r.cur};    // ανέβηκα: το πάνω έγινε τρέχον
+  clearPage(dir<0?pagerPage('next'):pagerPage('prev'));   // η ανακυκλωμένη σελίδα
+  setPagerTransforms(0,false);
+  stack[stack.length-1]=nid;
+  openProfile(nid,{push:false,sibs:profSibs,keepMedia:true});
+}
+(function profileGestures(){
+  const zone=$('#profile');
+  let down=false, sx=0, sy=0, st=0, axis=null, dy=0, H=1;
+  const excluded=e=>e.target.closest('.stats')||e.target.closest('.tags')||e.target.closest('#sheet')||e.target.closest('.topbar');
+  const start=e=>{
+    if(pager.animating || excluded(e)){ down=false; return; }
+    down=true; axis=null; dy=0;
+    const p=e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; st=performance.now();
+    H=zone.getBoundingClientRect().height||1;
+  };
+  const move=e=>{
+    if(!down) return;
+    const p=e.touches?e.touches[0]:e;
+    const dx=p.clientX-sx, vy=p.clientY-sy;
+    if(!axis){
+      if(Math.abs(dx)<10 && Math.abs(vy)<10) return;
+      axis = Math.abs(dx)>Math.abs(vy) ? 'h' : 'v';
+    }
+    if(axis!=='v') return;
+    dy=vy;
+    if((dy<0&&!pager.nextId)||(dy>0&&!pager.prevId)) dy*=0.3;  // rubber-band στα άκρα
+    setPagerTransforms(dy,false);
+    fadeInfo(Math.min(Math.abs(dy)/H*1.4,.85));
+    if(e.cancelable) e.preventDefault();
+  };
+  const end=e=>{
+    if(!down) return; down=false;
+    const p=e.changedTouches?e.changedTouches[0]:e;
+    const dx=p.clientX-sx;
+    if(axis==='v'){
+      const dt=Math.max(1,performance.now()-st);
+      const vel=(p.clientY-sy)/dt;                             // px/ms — flick
+      if(dy<0 && pager.nextId && (-dy>H*0.22 || vel<-0.5)) settlePager(-1);
+      else if(dy>0 && pager.prevId && (dy>H*0.22 || vel>0.5)) settlePager(1);
+      else settlePager(0);
+      return;
+    }
+    if(axis==='h'){
+      if(Math.abs(dx)<60) return;
       if(dx<0 && curVerIndex<curVersions.length-1){ const nid=curVersions[curVerIndex+1]; stack[stack.length-1]=nid; openProfile(nid,{push:false}); }
       else if(dx>0 && curVerIndex>0){ const nid=curVersions[curVerIndex-1]; stack[stack.length-1]=nid; openProfile(nid,{push:false}); }
-    } else if(profSibs && profSibs.length>1){ // κάθετη = αδέρφια (χωρίς αλλαγή βάθους)
-      const i=profSibs.indexOf(cur.id);
-      if(dy<0 && i<profSibs.length-1){ const nid=profSibs[i+1]; stack[stack.length-1]=nid; openProfile(nid,{push:false,sibs:profSibs}); }
-      else if(dy>0 && i>0){ const nid=profSibs[i-1]; stack[stack.length-1]=nid; openProfile(nid,{push:false,sibs:profSibs}); }
-    }};
-  zone.addEventListener('touchstart',start,{passive:true}); zone.addEventListener('mousedown',start);
-  zone.addEventListener('touchend',end); zone.addEventListener('mouseup',end);
+    }
+  };
+  zone.addEventListener('touchstart',start,{passive:true});
+  zone.addEventListener('mousedown',start);
+  window.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('mousemove',move);
+  window.addEventListener('touchend',end);
+  window.addEventListener('mouseup',end);
 })();
 
 /* ---------- back ---------- */
@@ -1156,7 +1260,8 @@ $('#back').onclick=()=>{
   if(stack.length>1){ stack.pop(); const prev=stack[stack.length-1]; openProfile(prev,{push:false}); }
   else { // πίσω στην αρχική
     loadSeq++;
-    $('#profile').style.display='none'; $('#pmedia').innerHTML='';
+    $('#profile').style.display='none';
+    pager.pages.forEach(clearPage);
     $('#start').classList.remove('gone');
     stack.length=0; sheet.classList.remove('open');
   }
